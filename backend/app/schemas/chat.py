@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
@@ -18,6 +18,20 @@ class AskQuestionRequest(BaseModel):
         le=20,
         description="Number of context chunks to retrieve (default from settings: 5)",
     )
+
+
+class SessionMessageRequest(BaseModel):
+    question: str = Field(..., min_length=1, description="Question to submit to the active chat session")
+    top_k: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=20,
+        description="Optional top_k chunks override",
+    )
+
+
+class RenameSessionRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=100, description="Updated conversation title")
 
 
 class SourceCitation(BaseModel):
@@ -50,12 +64,21 @@ class ChatSessionItem(BaseModel):
     id: str
     title: str
     document_ids: List[str] = Field(default_factory=list)
+    document_count: int = 0
+    message_count: int = 0
     created_at: str
     updated_at: str
 
 
 class ChatSessionListResponse(BaseModel):
     sessions: List[ChatSessionItem]
+
+
+class SessionDocumentInfo(BaseModel):
+    id: str
+    name: str
+    pages: int = 0
+    status: str = "completed"
 
 
 class ChatMessageItem(BaseModel):
@@ -69,4 +92,7 @@ class ChatMessageItem(BaseModel):
 
 class ChatSessionMessagesResponse(BaseModel):
     session: ChatSessionItem
+    documents: List[SessionDocumentInfo] = Field(default_factory=list)
+    unavailable_documents_count: int = 0
+    warning_message: Optional[str] = None
     messages: List[ChatMessageItem]

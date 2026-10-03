@@ -172,23 +172,31 @@ class GeminiService:
 
         context_text = self.construct_context_block(contexts)
 
-        # Assemble prompt
-        history_text = ""
+        # Assemble prompt with clear boundary separation between history and document evidence
+        history_section = ""
         if conversation_history:
+            limit = getattr(settings, "CHAT_HISTORY_LIMIT", 10)
             formatted_turns = [
                 f"{turn.get('role', 'user').capitalize()}: {turn.get('content', '')}"
-                for turn in conversation_history[-4:]  # Last 4 turns
+                for turn in conversation_history[-limit:]
             ]
-            history_text = "Recent Conversation History:\n" + "\n".join(formatted_turns) + "\n\n"
+            history_section = (
+                "CONVERSATION HISTORY (Used ONLY to resolve conversational references like 'it', 'they', or 'the first paper'):\n"
+                + "\n".join(formatted_turns)
+                + "\n\n"
+            )
 
         prompt = (
-            f"{history_text}"
-            f"Retrieved Document Context Excerpts:\n"
+            f"{history_section}"
+            f"CURRENT USER QUESTION:\n{clean_question}\n\n"
+            f"RETRIEVED DOCUMENT CONTEXT (Authoritative Factual Source):\n"
             f"{context_text}\n\n"
-            f"User Question: {clean_question}\n\n"
-            f"Provide a grounded, factual answer based strictly on the excerpts above. "
-            f"If the excerpts do not contain the answer, reply with the exact phrase: "
-            f"\"{SAFE_FALLBACK_ANSWER}\""
+            f"INSTRUCTIONS:\n"
+            f"1. Use conversation history ONLY to resolve references such as 'it', 'they', 'this method', 'the first paper', or 'that dataset'.\n"
+            f"2. Use retrieved document context as the ONLY authoritative, factual source for answering.\n"
+            f"3. Do NOT invent information that is not directly supported by the retrieved context.\n"
+            f"4. If the retrieved context does not contain enough information to formulate an accurate answer, state exactly:\n"
+            f"   \"{SAFE_FALLBACK_ANSWER}\""
         )
 
         try:

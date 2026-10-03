@@ -160,8 +160,12 @@ export const api = {
   /**
    * Create a new chat session
    */
-  async createSession(title = 'New Conversation') {
-    const res = await apiClient.post('/chat/sessions', { title });
+  async createSession(title = 'New Conversation', documentIds = null) {
+    const payload = { title };
+    if (documentIds && documentIds.length > 0) {
+      payload.document_ids = documentIds;
+    }
+    const res = await apiClient.post('/chat/sessions', payload);
     return res.data;
   },
 
@@ -182,10 +186,30 @@ export const api = {
   },
 
   /**
+   * Rename a chat session
+   */
+  async renameSession(sessionId, title) {
+    const res = await apiClient.patch(`/chat/sessions/${sessionId}`, { title });
+    return res.data;
+  },
+
+  /**
    * Delete a chat session
    */
   async deleteSession(sessionId) {
     const res = await apiClient.delete(`/chat/sessions/${sessionId}`);
+    return res.data;
+  },
+
+  /**
+   * Submit follow-up question to an active session
+   */
+  async sendSessionMessage(sessionId, question, topK = null) {
+    const payload = { question: question.trim() };
+    if (topK) {
+      payload.top_k = topK;
+    }
+    const res = await apiClient.post(`/chat/sessions/${sessionId}/messages`, payload);
     return res.data;
   },
 };

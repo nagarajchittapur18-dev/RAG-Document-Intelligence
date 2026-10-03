@@ -150,6 +150,18 @@ class DatabaseManager:
                 )
                 """
             )
+
+            # Check for is_active column in chat_session_documents
+            cursor = conn.execute("PRAGMA table_info(chat_session_documents)")
+            csd_cols = [r["name"] for r in cursor.fetchall()]
+            if "is_active" not in csd_cols:
+                conn.execute("ALTER TABLE chat_session_documents ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1")
+
+            # Performance indexes
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_sessions_user ON chat_sessions(user_id, updated_at DESC)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at ASC)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_session_docs ON chat_session_documents(session_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_documents_user ON documents(user_id)")
             conn.commit()
 
     # =========================================================================
@@ -260,8 +272,8 @@ class DatabaseManager:
 
     def delete_document(self, document_id: str, user_id: Optional[str] = None) -> bool:
         with self._get_connection() as conn:
-            # Clean up any session associations first
-            conn.execute("DELETE FROM chat_session_documents WHERE document_id = ?", (str(document_id),))
+            # Mark document as inactive in session bindings so sessions know a document was removed
+            conn.execute("UPDATE chat_session_documents SET is_active = 0 WHERE document_id = ?", (str(document_id),))
 
             if user_id:
                 cur = conn.execute(
@@ -315,19 +327,73 @@ class DatabaseManager:
             conn.execute("DELETE FROM chat_session_documents WHERE session_id = ?", (str(session_id),))
             for doc_id in document_ids:
                 conn.execute(
-                    "INSERT OR IGNORE INTO chat_session_documents (session_id, document_id) VALUES (?, ?)",
+                    "INSERT OR REPLACE INTO chat_session_documents (session_id, document_id, is_active) VALUES (?, ?, 1)",
                     (str(session_id), str(doc_id)),
                 )
             conn.commit()
 
-    def get_session_documents(self, session_id: str) -> List[str]:
+    def get_session_documents(self, session_id: str, active_only: bool = True) -> List[str]:
         """Retrieves list of document IDs bound to a chat session."""
         with self._get_connection() as conn:
-            rows = conn.execute(
-                "SELECT document_id FROM chat_session_documents WHERE session_id = ?",
-                (str(session_id),),
-            ).fetchall()
+            if active_only:
+                rows = conn.execute(
+                    """
+                    SELECT csd.document_id 
+                    FROM chat_session_documents csd
+                    JOIN documents d ON csd.document_id = d.id
+                    WHERE csd.session_id = ? AND csd.is_active = 1
+                    """,
+                    (str(session_id),),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT document_id FROM chat_session_documents WHERE session_id = ?",
+                    (str(session_id),),
+                ).fetchall()
             return [str(r["document_id"]) for r in rows]
+
+    def get_unavailable_documents_count(self, session_id: str) -> int:
+        """Counts how many documents previously bound to this session have been deleted."""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                """
+                SELECT COUNT(*) as count 
+                FROM chat_session_documents csd
+                WHERE csd.session_id = ? AND (
+                    csd.is_active = 0 OR csd.document_id NOT IN (SELECT id FROM documents)
+                )
+                """,
+                (str(session_id),),
+            ).fetchone()
+            return int(row["count"]) if row else 0
+
+    def rename_chat_session(self, session_id: str, user_id: str, new_title: str) -> Optional[ChatSessionRecord]:
+        """Renames a chat session verifying user ownership."""
+        now_iso = datetime.now(timezone.utc).isoformat()
+        with self._get_connection() as conn:
+            cur = conn.execute(
+                "UPDATE chat_sessions SET title = ?, updated_at = ? WHERE id = ? AND user_id = ?",
+                (new_title.strip(), now_iso, str(session_id), str(user_id)),
+            )
+            conn.commit()
+            if cur.rowcount > 0:
+                return self.get_chat_session(session_id, user_id)
+        return None
+
+    def update_session_title_if_default(self, session_id: str, new_title: str) -> bool:
+        """Updates session title if it currently has the default placeholder title."""
+        now_iso = datetime.now(timezone.utc).isoformat()
+        with self._get_connection() as conn:
+            cur = conn.execute(
+                """
+                UPDATE chat_sessions 
+                SET title = ?, updated_at = ? 
+                WHERE id = ? AND (title = 'New Conversation' OR title = '' OR title IS NULL)
+                """,
+                (new_title.strip(), now_iso, str(session_id)),
+            )
+            conn.commit()
+            return cur.rowcount > 0
 
     def list_chat_sessions_for_user(self, user_id: str) -> List[ChatSessionRecord]:
         with self._get_connection() as conn:
@@ -336,6 +402,29 @@ class DatabaseManager:
                 (str(user_id),),
             ).fetchall()
             return [ChatSessionRecord(**dict(row)) for row in rows]
+
+    def list_chat_sessions_with_counts(self, user_id: str) -> List[Dict[str, Any]]:
+        """Lists chat sessions for user with document_count and message_count in a single query."""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT 
+                    s.id,
+                    s.user_id,
+                    s.title,
+                    s.created_at,
+                    s.updated_at,
+                    (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS message_count,
+                    (SELECT COUNT(*) FROM chat_session_documents csd 
+                     JOIN documents d ON csd.document_id = d.id 
+                     WHERE csd.session_id = s.id AND csd.is_active = 1) AS document_count
+                FROM chat_sessions s
+                WHERE s.user_id = ?
+                ORDER BY s.updated_at DESC
+                """,
+                (str(user_id),),
+            ).fetchall()
+            return [dict(r) for r in rows]
 
     def get_chat_session(self, session_id: str, user_id: str) -> Optional[ChatSessionRecord]:
         with self._get_connection() as conn:
@@ -409,12 +498,20 @@ class DatabaseManager:
             created_at=now_iso,
         )
 
-    def get_messages_for_session(self, session_id: str) -> List[ChatMessageRecord]:
+    def get_messages_for_session(
+        self,
+        session_id: str,
+        limit: Optional[int] = None,
+        offset: int = 0,
+    ) -> List[ChatMessageRecord]:
         with self._get_connection() as conn:
-            rows = conn.execute(
-                "SELECT * FROM messages WHERE session_id = ? ORDER BY created_at ASC",
-                (str(session_id),),
-            ).fetchall()
+            query = "SELECT * FROM messages WHERE session_id = ? ORDER BY created_at ASC"
+            params: list = [str(session_id)]
+            if limit is not None:
+                query += " LIMIT ? OFFSET ?"
+                params.extend([limit, offset])
+
+            rows = conn.execute(query, tuple(params)).fetchall()
 
             messages: List[ChatMessageRecord] = []
             for r in rows:

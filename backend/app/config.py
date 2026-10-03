@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     CHUNK_SIZE: int = 1000
     CHUNK_OVERLAP: int = 150
     SIMILARITY_THRESHOLD: float = 0.15
+    CHAT_HISTORY_LIMIT: int = 10
+    CHAT_MESSAGE_PAGE_SIZE: int = 50
 
     # Cross-Encoder Reranker Settings
     RERANKER_ENABLED: bool = False
