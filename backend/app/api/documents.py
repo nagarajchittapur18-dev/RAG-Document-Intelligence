@@ -4,7 +4,7 @@ import shutil
 import uuid
 from pathlib import Path
 from typing import List, Optional
-from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
 from app.config import settings
 from app.schemas.document import (
@@ -15,7 +15,7 @@ from app.schemas.document import (
     DocumentUploadResponse,
 )
 from app.services.chunker import DocumentChunker
-from app.services.document_store import DocumentStore
+from app.services.document_store import DocumentStore, UserRecord
 from app.services.pdf_processor import (
     CorruptPDFError,
     EmptyPDFError,
@@ -24,6 +24,7 @@ from app.services.pdf_processor import (
     ScannedPDFError,
 )
 from app.services.vector_store import VectorStore
+from app.utils.dependencies import get_current_user
 
 logger = logging.getLogger("ragmate.api.documents")
 router = APIRouter(prefix="/documents", tags=["Documents"])
@@ -42,7 +43,10 @@ document_store = DocumentStore()
     summary="Upload and process a PDF document",
     description="Uploads a PDF, extracts page-by-page text, segments text into chunks, generates embeddings, and indexes chunks into ChromaDB.",
 )
-async def upload_document(file: UploadFile = File(...)):
+async def upload_document(
+    file: UploadFile = File(...),
+    current_user: UserRecord = Depends(get_current_user),
+):
     if not file or not file.filename:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -108,9 +112,10 @@ async def upload_document(file: UploadFile = File(...)):
     try:
         extracted = pdf_processor.extract_document(str(saved_path), filename=clean_filename)
         chunks = chunker.chunk_document(extracted, document_id=doc_id)
-        vector_store.add_chunks(chunks)
+        vector_store.add_chunks(chunks, user_id=current_user.id)
         document_store.add_document(
             document_id=doc_id,
+            user_id=current_user.id,
             filename=clean_filename,
             file_path=str(saved_path.resolve()),
             pages=extracted.page_count,
@@ -120,8 +125,9 @@ async def upload_document(file: UploadFile = File(...)):
         )
 
         logger.info(
-            "Document '%s' successfully indexed (ID: %s, pages: %d, chunks: %d)",
+            "Document '%s' successfully indexed for user %s (ID: %s, pages: %d, chunks: %d)",
             clean_filename,
+            current_user.email,
             doc_id,
             extracted.page_count,
             len(chunks),
@@ -158,10 +164,10 @@ async def upload_document(file: UploadFile = File(...)):
     "",
     response_model=DocumentListResponse,
     summary="List all uploaded documents",
-    description="Returns metadata for all documents currently indexed in the system.",
+    description="Returns metadata for all documents owned by the authenticated user.",
 )
-async def list_documents():
-    docs = document_store.list_documents()
+async def list_documents(current_user: UserRecord = Depends(get_current_user)):
+    docs = document_store.list_documents_for_user(current_user.id)
     items = [
         DocumentItem(
             id=d.id,
@@ -183,9 +189,12 @@ async def list_documents():
     summary="Get document details",
     description="Retrieves status, page count, chunk count, and metadata for a specific document.",
 )
-async def get_document(document_id: str):
+async def get_document(
+    document_id: str,
+    current_user: UserRecord = Depends(get_current_user),
+):
     doc = document_store.get_document(document_id)
-    if not doc:
+    if not doc or doc.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Document not found.",
@@ -208,9 +217,12 @@ async def get_document(document_id: str):
     summary="Delete a document",
     description="Removes the PDF file from disk, purges its vector embeddings from ChromaDB, and removes metadata.",
 )
-async def delete_document(document_id: str):
+async def delete_document(
+    document_id: str,
+    current_user: UserRecord = Depends(get_current_user),
+):
     doc = document_store.get_document(document_id)
-    if not doc:
+    if not doc or doc.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Document not found.",
@@ -231,7 +243,7 @@ async def delete_document(document_id: str):
         logger.warning("Could not delete file %s from disk: %s", doc.file_path, e)
 
     # 3. Delete from document registry
-    document_store.delete_document(document_id)
+    document_store.delete_document(document_id, user_id=current_user.id)
 
-    logger.info("Successfully deleted document '%s' (ID: %s)", doc.filename, document_id)
+    logger.info("Successfully deleted document '%s' (ID: %s) for user %s", doc.filename, document_id, current_user.email)
     return DocumentDeleteResponse(message="Document deleted successfully")

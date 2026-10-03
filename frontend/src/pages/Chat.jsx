@@ -9,6 +9,9 @@ import {
   ChevronDown,
   Info,
   BookOpen,
+  Plus,
+  Clock,
+  History,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import ChatMessage from '../components/ChatMessage';
@@ -17,11 +20,17 @@ import ErrorMessage from '../components/ErrorMessage';
 import api from '../services/api';
 
 export default function Chat() {
-  const { documents, selectedDocIds, setSelectedDocIds, showNotification } = useApp();
+  const { documents, selectedDocIds, setSelectedDocIds } = useApp();
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [showDocSelector, setShowDocSelector] = useState(false);
+  const [showSessionSelector, setShowSessionSelector] = useState(false);
+
+  // Chat sessions state
+  const [sessions, setSessions] = useState([]);
+  const [currentSessionId, setCurrentSessionId] = useState(null);
+
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -31,6 +40,63 @@ export default function Chat() {
   useEffect(() => {
     scrollToBottom();
   }, [messages, loading]);
+
+  // Load chat sessions on mount
+  useEffect(() => {
+    loadSessions();
+  }, []);
+
+  const loadSessions = async () => {
+    try {
+      const data = await api.getSessions();
+      setSessions(data);
+    } catch (err) {
+      console.error('Failed to load chat sessions:', err);
+    }
+  };
+
+  const handleSelectSession = async (sessionId) => {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await api.getSession(sessionId);
+      setCurrentSessionId(sessionId);
+      // Format messages
+      const formatted = (data.messages || []).map((m) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        sources: m.sources || [],
+        timestamp: m.created_at,
+      }));
+      setMessages(formatted);
+      setShowSessionSelector(false);
+    } catch (err) {
+      setError('Failed to load conversation history.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleNewChat = () => {
+    setCurrentSessionId(null);
+    setMessages([]);
+    setError(null);
+    setShowSessionSelector(false);
+  };
+
+  const handleDeleteSession = async (e, sessionId) => {
+    e.stopPropagation();
+    try {
+      await api.deleteSession(sessionId);
+      setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+      if (currentSessionId === sessionId) {
+        handleNewChat();
+      }
+    } catch (err) {
+      console.error('Failed to delete chat session:', err);
+    }
+  };
 
   const handleToggleDoc = (docId) => {
     setSelectedDocIds((prev) => {
@@ -59,8 +125,18 @@ export default function Chat() {
     setLoading(true);
 
     try {
+      let activeSession = currentSessionId;
+      // If no active session, create one with the question as title
+      if (!activeSession) {
+        const title = questionText.slice(0, 36) + (questionText.length > 36 ? '...' : '');
+        const newSession = await api.createSession(title);
+        activeSession = newSession.id;
+        setCurrentSessionId(activeSession);
+        setSessions((prev) => [newSession, ...prev]);
+      }
+
       const docScope = selectedDocIds.length > 0 ? selectedDocIds : null;
-      const response = await api.askQuestion(questionText, docScope);
+      const response = await api.askQuestion(questionText, docScope, null, activeSession);
 
       const aiMessage = {
         id: Date.now() + 1,
@@ -73,16 +149,12 @@ export default function Chat() {
       };
 
       setMessages((prev) => [...prev, aiMessage]);
+      loadSessions(); // refresh updated_at
     } catch (err) {
       setError(err.message || 'Failed to generate answer. Please try again.');
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleClearChat = () => {
-    setMessages([]);
-    setError(null);
   };
 
   // Helper label for document scope selector
@@ -96,6 +168,10 @@ export default function Chat() {
     }
     return `${selectedDocIds.length} Documents Selected`;
   };
+
+  const activeSessionTitle = currentSessionId
+    ? sessions.find((s) => s.id === currentSessionId)?.title || 'Active Session'
+    : 'New Conversation';
 
   return (
     <div className="flex flex-col h-[calc(100vh-7rem)] max-w-5xl mx-auto">
@@ -114,6 +190,84 @@ export default function Chat() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* History / Sessions dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setShowSessionSelector(!showSessionSelector)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-50 border border-slate-300 text-slate-700 hover:bg-slate-100 transition-colors"
+              title="Chat History"
+            >
+              <History className="w-3.5 h-3.5 text-slate-500" />
+              <span className="max-w-[130px] truncate">{activeSessionTitle}</span>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+            </button>
+
+            {showSessionSelector && (
+              <>
+                <div
+                  className="fixed inset-0 z-20"
+                  onClick={() => setShowSessionSelector(false)}
+                />
+                <div className="absolute right-0 mt-2 w-72 sm:w-80 bg-white border border-slate-200 rounded-xl shadow-xl z-30 p-2 text-xs space-y-1">
+                  <div className="p-2 border-b border-slate-100 flex items-center justify-between font-semibold text-slate-700">
+                    <span>Chat History</span>
+                    <button
+                      onClick={handleNewChat}
+                      className="inline-flex items-center gap-1 text-[11px] text-brand-600 hover:text-brand-700 font-medium"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>New Chat</span>
+                    </button>
+                  </div>
+
+                  {sessions.length === 0 ? (
+                    <div className="p-4 text-center text-slate-400 text-xs">
+                      No conversations yet. Ask a question to begin.
+                    </div>
+                  ) : (
+                    <div className="max-h-60 overflow-y-auto space-y-1 p-1">
+                      {sessions.map((s) => (
+                        <div
+                          key={s.id}
+                          onClick={() => handleSelectSession(s.id)}
+                          className={`flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer transition-colors ${
+                            currentSessionId === s.id
+                              ? 'bg-brand-50 text-brand-900 font-medium border border-brand-200'
+                              : 'hover:bg-slate-50 text-slate-700'
+                          }`}
+                        >
+                          <div className="truncate pr-2">
+                            <p className="truncate text-xs">{s.title}</p>
+                            <span className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
+                              <Clock className="w-2.5 h-2.5" />
+                              {new Date(s.updated_at).toLocaleDateString()}
+                            </span>
+                          </div>
+                          <button
+                            onClick={(e) => handleDeleteSession(e, s.id)}
+                            className="p-1 text-slate-400 hover:text-red-500 rounded transition-colors"
+                            title="Delete Session"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* New Chat Button */}
+          <button
+            onClick={handleNewChat}
+            className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-100 border border-slate-300 transition-colors"
+            title="Start New Chat"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+
           {/* Document Scope Selector Dropdown */}
           <div className="relative">
             <button
@@ -121,7 +275,7 @@ export default function Chat() {
               className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-50 border border-slate-300 text-slate-700 hover:bg-slate-100 transition-colors"
             >
               <Filter className="w-3.5 h-3.5 text-slate-500" />
-              <span className="max-w-[180px] sm:max-w-[240px] truncate">{getScopeLabel()}</span>
+              <span className="max-w-[150px] sm:max-w-[200px] truncate">{getScopeLabel()}</span>
               <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
             </button>
 
@@ -189,16 +343,6 @@ export default function Chat() {
               </>
             )}
           </div>
-
-          {messages.length > 0 && (
-            <button
-              onClick={handleClearChat}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
-              title="Clear Conversation"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          )}
         </div>
       </div>
 

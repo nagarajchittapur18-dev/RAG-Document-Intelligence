@@ -10,10 +10,32 @@ const apiClient = axios.create({
   timeout: 60000, // 60s timeout for LLM generation
 });
 
-// Response error interceptor
+// Request interceptor: Inject Bearer JWT token if present
+apiClient.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('ragmate_token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+// Response interceptor: Extract message and handle 401 Unauthorized
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
+    const status = error.response?.status;
+    if (status === 401) {
+      localStorage.removeItem('ragmate_token');
+      localStorage.removeItem('ragmate_user');
+      const currentPath = window.location.pathname;
+      if (currentPath !== '/login' && currentPath !== '/register') {
+        window.location.href = '/login';
+      }
+    }
+
     let message = 'Unable to connect to DocuRAG backend. Please verify the server is running.';
     if (error.response?.data?.detail) {
       message = error.response.data.detail;
@@ -33,8 +55,40 @@ export const api = {
     return res.data;
   },
 
+  // ==========================================
+  // AUTHENTICATION APIS
+  // ==========================================
+
   /**
-   * Retrieve list of all uploaded documents
+   * Register a new user account
+   */
+  async register(name, email, password) {
+    const res = await apiClient.post('/auth/register', { name, email, password });
+    return res.data;
+  },
+
+  /**
+   * Log in user and receive JWT access token
+   */
+  async login(email, password) {
+    const res = await apiClient.post('/auth/login', { email, password });
+    return res.data;
+  },
+
+  /**
+   * Fetch current authenticated user profile
+   */
+  async getMe() {
+    const res = await apiClient.get('/auth/me');
+    return res.data;
+  },
+
+  // ==========================================
+  // DOCUMENT MANAGEMENT APIS
+  // ==========================================
+
+  /**
+   * Retrieve list of all uploaded documents for authenticated user
    */
   async getDocuments() {
     const res = await apiClient.get('/documents');
@@ -78,10 +132,14 @@ export const api = {
     return res.data;
   },
 
+  // ==========================================
+  // CHAT & SESSIONS APIS
+  // ==========================================
+
   /**
    * Submit natural language question for grounded RAG generation
    */
-  async askQuestion(question, documentIds = null, topK = null) {
+  async askQuestion(question, documentIds = null, topK = null, sessionId = null) {
     const payload = {
       question: question.trim(),
     };
@@ -91,8 +149,43 @@ export const api = {
     if (topK) {
       payload.top_k = topK;
     }
+    if (sessionId) {
+      payload.session_id = sessionId;
+    }
 
     const res = await apiClient.post('/chat/ask', payload);
+    return res.data;
+  },
+
+  /**
+   * Create a new chat session
+   */
+  async createSession(title = 'New Conversation') {
+    const res = await apiClient.post('/chat/sessions', { title });
+    return res.data;
+  },
+
+  /**
+   * List chat sessions for current user
+   */
+  async getSessions() {
+    const res = await apiClient.get('/chat/sessions');
+    return res.data.sessions || [];
+  },
+
+  /**
+   * Get messages and details for a session
+   */
+  async getSession(sessionId) {
+    const res = await apiClient.get(`/chat/sessions/${sessionId}`);
+    return res.data;
+  },
+
+  /**
+   * Delete a chat session
+   */
+  async deleteSession(sessionId) {
+    const res = await apiClient.delete(`/chat/sessions/${sessionId}`);
     return res.data;
   },
 };

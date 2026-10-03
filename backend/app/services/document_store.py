@@ -1,15 +1,27 @@
-import sqlite3
+import json
 import logging
+import sqlite3
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional
-from pydantic import BaseModel
+from typing import Any, Dict, List, Optional
+from pydantic import BaseModel, Field
 
-logger = logging.getLogger("ragmate.document_store")
+logger = logging.getLogger("ragmate.database")
+
+
+class UserRecord(BaseModel):
+    id: str
+    name: str
+    email: str
+    password_hash: str
+    created_at: str
+    updated_at: str
 
 
 class DocumentRecord(BaseModel):
     id: str
+    user_id: str
     filename: str
     file_path: str
     pages: int
@@ -19,16 +31,33 @@ class DocumentRecord(BaseModel):
     created_at: str
 
 
-class DocumentStore:
+class ChatSessionRecord(BaseModel):
+    id: str
+    user_id: str
+    title: str
+    created_at: str
+    updated_at: str
+
+
+class ChatMessageRecord(BaseModel):
+    id: str
+    session_id: str
+    role: str
+    content: str
+    sources: List[Dict[str, Any]] = Field(default_factory=list)
+    created_at: str
+
+
+class DatabaseManager:
     """
-    Lightweight SQLite document metadata registry.
-    Persists document attributes across restarts and synchronizes with ChromaDB.
+    Central SQLite database manager providing multi-tenant persistence
+    for users, documents, chat sessions, and messages.
     """
 
     def __init__(self, db_path: Optional[str] = None):
         if db_path is None:
             base_dir = Path(__file__).resolve().parent.parent.parent
-            self.db_path = str(base_dir / "ragmate_documents.db")
+            self.db_path = str(base_dir / "ragmate_database.db")
         else:
             self.db_path = db_path
 
@@ -41,21 +70,121 @@ class DocumentStore:
 
     def _init_db(self):
         with self._get_connection() as conn:
+            # 1. Users table
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS users (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    email TEXT UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+
+            # 2. Documents table (with user_id foreign key)
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS documents (
                     id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
                     filename TEXT NOT NULL,
                     file_path TEXT NOT NULL,
                     pages INTEGER NOT NULL DEFAULT 0,
                     chunks INTEGER NOT NULL DEFAULT 0,
                     file_size INTEGER NOT NULL DEFAULT 0,
                     status TEXT NOT NULL DEFAULT 'completed',
-                    created_at TEXT NOT NULL
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (user_id) REFERENCES users(id)
+                )
+                """
+            )
+
+            # Check and perform migration if documents table was created earlier without user_id
+            cursor = conn.execute("PRAGMA table_info(documents)")
+            columns = [row["name"] for row in cursor.fetchall()]
+            if "user_id" not in columns:
+                logger.info("Migrating documents table: adding user_id column...")
+                conn.execute("ALTER TABLE documents ADD COLUMN user_id TEXT NOT NULL DEFAULT 'default_user'")
+
+            # 3. Chat sessions table
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS chat_sessions (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (user_id) REFERENCES users(id)
+                )
+                """
+            )
+
+            # 4. Messages table
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS messages (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    sources_json TEXT,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (session_id) REFERENCES chat_sessions(id)
                 )
                 """
             )
             conn.commit()
+
+    # =========================================================================
+    # USER REPOSITORY
+    # =========================================================================
+
+    def create_user(self, name: str, email: str, password_hash: str) -> UserRecord:
+        user_id = uuid.uuid4().hex[:12]
+        now_iso = datetime.now(timezone.utc).isoformat()
+        normalized_email = email.strip().lower()
+
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO users (id, name, email, password_hash, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (user_id, name.strip(), normalized_email, password_hash, now_iso, now_iso),
+            )
+            conn.commit()
+
+        return UserRecord(
+            id=user_id,
+            name=name.strip(),
+            email=normalized_email,
+            password_hash=password_hash,
+            created_at=now_iso,
+            updated_at=now_iso,
+        )
+
+    def get_user_by_email(self, email: str) -> Optional[UserRecord]:
+        normalized_email = email.strip().lower()
+        with self._get_connection() as conn:
+            row = conn.execute("SELECT * FROM users WHERE email = ?", (normalized_email,)).fetchone()
+            if row:
+                return UserRecord(**dict(row))
+        return None
+
+    def get_user_by_id(self, user_id: str) -> Optional[UserRecord]:
+        with self._get_connection() as conn:
+            row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+            if row:
+                return UserRecord(**dict(row))
+        return None
+
+    # =========================================================================
+    # DOCUMENT REPOSITORY (User Scoped)
+    # =========================================================================
 
     def add_document(
         self,
@@ -65,21 +194,23 @@ class DocumentStore:
         pages: int,
         chunks: int,
         file_size: int,
+        user_id: str = "default_user",
         status: str = "completed",
     ) -> DocumentRecord:
         now_iso = datetime.now(timezone.utc).isoformat()
         with self._get_connection() as conn:
             conn.execute(
                 """
-                INSERT OR REPLACE INTO documents (id, filename, file_path, pages, chunks, file_size, status, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT OR REPLACE INTO documents (id, user_id, filename, file_path, pages, chunks, file_size, status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (document_id, filename, file_path, pages, chunks, file_size, status, now_iso),
+                (document_id, str(user_id), filename, file_path, pages, chunks, file_size, status, now_iso),
             )
             conn.commit()
 
         return DocumentRecord(
             id=document_id,
+            user_id=str(user_id),
             filename=filename,
             file_path=file_path,
             pages=pages,
@@ -91,22 +222,159 @@ class DocumentStore:
 
     def get_document(self, document_id: str) -> Optional[DocumentRecord]:
         with self._get_connection() as conn:
-            row = conn.execute(
-                "SELECT * FROM documents WHERE id = ?", (document_id,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM documents WHERE id = ?", (str(document_id),)).fetchone()
             if row:
                 return DocumentRecord(**dict(row))
         return None
 
-    def list_documents(self) -> List[DocumentRecord]:
+    def list_documents(self, user_id: Optional[str] = None) -> List[DocumentRecord]:
+        if user_id:
+            return self.list_documents_for_user(user_id)
+        return self.list_all_documents()
+
+    def list_documents_for_user(self, user_id: str) -> List[DocumentRecord]:
         with self._get_connection() as conn:
             rows = conn.execute(
-                "SELECT * FROM documents ORDER BY created_at DESC"
+                "SELECT * FROM documents WHERE user_id = ? ORDER BY created_at DESC",
+                (str(user_id),),
             ).fetchall()
             return [DocumentRecord(**dict(row)) for row in rows]
 
-    def delete_document(self, document_id: str) -> bool:
+    def list_all_documents(self) -> List[DocumentRecord]:
         with self._get_connection() as conn:
-            cur = conn.execute("DELETE FROM documents WHERE id = ?", (document_id,))
+            rows = conn.execute("SELECT * FROM documents ORDER BY created_at DESC").fetchall()
+            return [DocumentRecord(**dict(row)) for row in rows]
+
+    def delete_document(self, document_id: str, user_id: Optional[str] = None) -> bool:
+        with self._get_connection() as conn:
+            if user_id:
+                cur = conn.execute(
+                    "DELETE FROM documents WHERE id = ? AND user_id = ?",
+                    (str(document_id), str(user_id)),
+                )
+            else:
+                cur = conn.execute("DELETE FROM documents WHERE id = ?", (str(document_id),))
             conn.commit()
             return cur.rowcount > 0
+
+    # =========================================================================
+    # CHAT SESSIONS & MESSAGES REPOSITORY
+    # =========================================================================
+
+    def create_chat_session(self, user_id: str, title: str) -> ChatSessionRecord:
+        session_id = uuid.uuid4().hex[:12]
+        now_iso = datetime.now(timezone.utc).isoformat()
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO chat_sessions (id, user_id, title, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (session_id, str(user_id), title.strip(), now_iso, now_iso),
+            )
+            conn.commit()
+
+        return ChatSessionRecord(
+            id=session_id,
+            user_id=str(user_id),
+            title=title.strip(),
+            created_at=now_iso,
+            updated_at=now_iso,
+        )
+
+    def list_chat_sessions_for_user(self, user_id: str) -> List[ChatSessionRecord]:
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM chat_sessions WHERE user_id = ? ORDER BY updated_at DESC",
+                (str(user_id),),
+            ).fetchall()
+            return [ChatSessionRecord(**dict(row)) for row in rows]
+
+    def get_chat_session(self, session_id: str, user_id: str) -> Optional[ChatSessionRecord]:
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM chat_sessions WHERE id = ? AND user_id = ?",
+                (str(session_id), str(user_id)),
+            ).fetchone()
+            if row:
+                return ChatSessionRecord(**dict(row))
+        return None
+
+    def delete_chat_session(self, session_id: str, user_id: str) -> bool:
+        with self._get_connection() as conn:
+            # Delete messages first
+            conn.execute(
+                """
+                DELETE FROM messages WHERE session_id IN (
+                    SELECT id FROM chat_sessions WHERE id = ? AND user_id = ?
+                )
+                """,
+                (str(session_id), str(user_id)),
+            )
+            cur = conn.execute(
+                "DELETE FROM chat_sessions WHERE id = ? AND user_id = ?",
+                (str(session_id), str(user_id)),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+
+    def add_message(
+        self,
+        session_id: str,
+        role: str,
+        content: str,
+        sources: Optional[List[Dict[str, Any]]] = None,
+    ) -> ChatMessageRecord:
+        msg_id = uuid.uuid4().hex[:12]
+        now_iso = datetime.now(timezone.utc).isoformat()
+        sources_str = json.dumps(sources) if sources else None
+
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO messages (id, session_id, role, content, sources_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (msg_id, str(session_id), role, content, sources_str, now_iso),
+            )
+            # Update session timestamp
+            conn.execute(
+                "UPDATE chat_sessions SET updated_at = ? WHERE id = ?",
+                (now_iso, str(session_id)),
+            )
+            conn.commit()
+
+        return ChatMessageRecord(
+            id=msg_id,
+            session_id=str(session_id),
+            role=role,
+            content=content,
+            sources=sources or [],
+            created_at=now_iso,
+        )
+
+    def get_messages_for_session(self, session_id: str) -> List[ChatMessageRecord]:
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM messages WHERE session_id = ? ORDER BY created_at ASC",
+                (str(session_id),),
+            ).fetchall()
+
+            messages: List[ChatMessageRecord] = []
+            for r in rows:
+                sources = json.loads(r["sources_json"]) if r["sources_json"] else []
+                messages.append(
+                    ChatMessageRecord(
+                        id=r["id"],
+                        session_id=r["session_id"],
+                        role=r["role"],
+                        content=r["content"],
+                        sources=sources,
+                        created_at=r["created_at"],
+                    )
+                )
+            return messages
+
+
+# Compatibility alias so existing imports of DocumentStore work seamlessly
+DocumentStore = DatabaseManager

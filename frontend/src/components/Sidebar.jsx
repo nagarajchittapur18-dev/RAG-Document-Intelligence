@@ -11,9 +11,21 @@ import {
   Database,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
+import { LogOut } from 'lucide-react';
 
 export default function Sidebar({ isOpen, onClose }) {
   const { documents, systemHealth } = useApp();
+  const { user, logout } = useAuth();
+
+  const userInitials = user?.name
+    ? user.name
+        .split(' ')
+        .map((n) => n[0])
+        .join('')
+        .toUpperCase()
+        .slice(0, 2)
+    : 'U';
 
   const navItems = [
     {
@@ -143,6 +155,28 @@ export default function Sidebar({ isOpen, onClose }) {
             </div>
           </div>
         </div>
+
+        {/* User Card */}
+        {user && (
+          <div className="px-4 py-3 mx-4 mb-3 rounded-xl bg-slate-800/50 border border-slate-800 flex items-center justify-between">
+            <div className="flex items-center gap-2.5 overflow-hidden">
+              <div className="w-8 h-8 rounded-full bg-indigo-600 text-white font-bold text-xs flex items-center justify-center shrink-0">
+                {userInitials}
+              </div>
+              <div className="overflow-hidden">
+                <p className="text-xs font-semibold text-slate-200 truncate">{user.name}</p>
+                <p className="text-[11px] text-slate-400 truncate">{user.email}</p>
+              </div>
+            </div>
+            <button
+              onClick={logout}
+              title="Sign Out"
+              className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-slate-700/50 rounded-lg transition-colors ml-1"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        )}
 
         {/* User / Academic footer */}
         <div className="px-5 py-3 border-t border-slate-800 text-[11px] text-slate-500 flex items-center justify-between">

@@ -8,6 +8,10 @@ class AskQuestionRequest(BaseModel):
         default=None,
         description="Optional list of document IDs to scope retrieval to. If omitted or empty, queries all documents.",
     )
+    session_id: Optional[str] = Field(
+        default=None,
+        description="Optional chat session ID to associate question and answer with",
+    )
     top_k: Optional[int] = Field(
         default=None,
         ge=1,
@@ -30,3 +34,33 @@ class AskQuestionResponse(BaseModel):
     sources: List[SourceCitation] = Field(default_factory=list, description="Preserved provenance citations")
     retrieved_chunks: int = Field(0, description="Count of retrieved context chunks")
     response_time_ms: float = Field(0.0, description="Total pipeline latency in milliseconds")
+    session_id: Optional[str] = Field(None, description="Chat session ID if conversation is tracked")
+
+
+class CreateSessionRequest(BaseModel):
+    title: Optional[str] = Field("New Conversation", description="Title for the chat session")
+
+
+class ChatSessionItem(BaseModel):
+    id: str
+    title: str
+    created_at: str
+    updated_at: str
+
+
+class ChatSessionListResponse(BaseModel):
+    sessions: List[ChatSessionItem]
+
+
+class ChatMessageItem(BaseModel):
+    id: str
+    session_id: str
+    role: str
+    content: str
+    sources: List[dict] = Field(default_factory=list)
+    created_at: str
+
+
+class ChatSessionMessagesResponse(BaseModel):
+    session: ChatSessionItem
+    messages: List[ChatMessageItem]

@@ -1,13 +1,17 @@
 import React, { useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { AppProvider, useApp } from './context/AppContext';
+import ProtectedRoute from './components/ProtectedRoute';
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
 import Documents from './pages/Documents';
 import DocumentDetails from './pages/DocumentDetails';
 import Chat from './pages/Chat';
-import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react';
+import Login from './pages/Login';
+import Register from './pages/Register';
+import { CheckCircle2, AlertCircle, Info } from 'lucide-react';
 
 function NotificationBanner() {
   const { notification } = useApp();
@@ -32,6 +36,15 @@ function NotificationBanner() {
       <span>{notification.message}</span>
     </div>
   );
+}
+
+function PublicOnlyRoute({ children }) {
+  const { isAuthenticated, loading } = useAuth();
+  if (loading) return null;
+  if (isAuthenticated) {
+    return <Navigate to="/" replace />;
+  }
+  return children;
 }
 
 function MainLayout() {
@@ -64,10 +77,40 @@ function MainLayout() {
 
 export default function App() {
   return (
-    <AppProvider>
-      <BrowserRouter>
-        <MainLayout />
-      </BrowserRouter>
-    </AppProvider>
+    <BrowserRouter>
+      <AuthProvider>
+        <Routes>
+          {/* Public Auth Routes */}
+          <Route
+            path="/login"
+            element={
+              <PublicOnlyRoute>
+                <Login />
+              </PublicOnlyRoute>
+            }
+          />
+          <Route
+            path="/register"
+            element={
+              <PublicOnlyRoute>
+                <Register />
+              </PublicOnlyRoute>
+            }
+          />
+
+          {/* Protected Application Routes */}
+          <Route
+            path="/*"
+            element={
+              <ProtectedRoute>
+                <AppProvider>
+                  <MainLayout />
+                </AppProvider>
+              </ProtectedRoute>
+            }
+          />
+        </Routes>
+      </AuthProvider>
+    </BrowserRouter>
   );
 }

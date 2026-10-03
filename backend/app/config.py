@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = "ragmate_academic_mca_super_secret_jwt_key_2026_x89q2_production_ready"
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
+    JWT_EXPIRATION_MINUTES: int = 1440
 
     # Vector Store & Embedding Settings
     CHROMA_PERSIST_DIRECTORY: str = "./chroma_data"
