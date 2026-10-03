@@ -1,0 +1,85 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+backend/venv/
+backend/.venv/
+.venv/
+
+# Environment Variables & Secrets
+.env
+*.env
+!.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# Node / Frontend
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+.npm
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ChromaDB & Vector Store Data
+backend/chroma_data/
+chroma_data/
+!backend/chroma_data/.gitkeep
+
+# Uploads
+backend/uploads/*
+uploads/*
+!backend/uploads/.gitkeep
+
+# SQLite database files
+*.db
+*.sqlite3
+backend/*.db
+backend/*.sqlite3
+
+# Evaluation outputs / artifacts
+evaluation/results/*
+!evaluation/results/.gitkeep
+
+# IDEs & OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
