@@ -35,16 +35,63 @@ export default function ChatMessage({ message }) {
             {message.content}
           </div>
 
-          {/* Sources Section */}
+          {/* Sources Section - Grouped by Document */}
           {hasSources && (
             <div className="pt-3 border-t border-slate-100">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 mb-2.5">
-                <BookOpen className="w-3.5 h-3.5 text-brand-600" />
-                <span>Verified Source Citations ({message.sources.length})</span>
+              <div className="flex items-center justify-between text-xs font-semibold text-slate-700 mb-2.5">
+                <div className="flex items-center gap-1.5">
+                  <BookOpen className="w-3.5 h-3.5 text-brand-600" />
+                  <span>Verified Source Citations ({message.sources.length})</span>
+                </div>
+                <span className="text-[11px] font-normal text-slate-500">
+                  {Object.keys(
+                    message.sources.reduce((acc, s) => {
+                      acc[s.document_name] = true;
+                      return acc;
+                    }, {})
+                  ).length}{' '}
+                  Document(s) Cited
+                </span>
               </div>
-              <div className="grid gap-2 sm:grid-cols-1">
-                {message.sources.map((source, idx) => (
-                  <SourceCard key={source.chunk_id || idx} source={source} index={idx} />
+
+              {/* Document Groups */}
+              <div className="space-y-3">
+                {Object.values(
+                  message.sources.reduce((acc, source) => {
+                    const docName = source.document_name || 'Document';
+                    if (!acc[docName]) {
+                      acc[docName] = {
+                        documentId: source.document_id,
+                        documentName: docName,
+                        items: [],
+                      };
+                    }
+                    acc[docName].items.push(source);
+                    return acc;
+                  }, {})
+                ).map((group, gIdx) => (
+                  <div
+                    key={group.documentName + gIdx}
+                    className="bg-slate-50/80 border border-slate-200/80 rounded-xl p-3 space-y-2"
+                  >
+                    <div className="flex items-center justify-between text-xs font-semibold text-slate-800 border-b border-slate-200/60 pb-1.5">
+                      <div className="flex items-center gap-2 truncate">
+                        <span className="text-base leading-none">📄</span>
+                        <span className="truncate" title={group.documentName}>
+                          {group.documentName}
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-medium text-slate-500 bg-slate-200/70 px-2 py-0.5 rounded-full shrink-0">
+                        {group.items.length} excerpt{group.items.length > 1 ? 's' : ''}
+                      </span>
+                    </div>
+
+                    <div className="grid gap-2">
+                      {group.items.map((source, idx) => (
+                        <SourceCard key={source.chunk_id || idx} source={source} index={idx} />
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
@@ -59,10 +106,16 @@ export default function ChatMessage({ message }) {
                   {message.responseTimeMs} ms
                 </span>
               )}
+              {message.documentsSearched !== undefined && (
+                <span className="flex items-center gap-1 font-mono">
+                  <BookOpen className="w-3 h-3 text-slate-400" />
+                  {message.documentsSearched} doc{message.documentsSearched !== 1 ? 's' : ''} searched
+                </span>
+              )}
               {message.retrievedChunks !== undefined && (
                 <span className="flex items-center gap-1 font-mono">
                   <Layers className="w-3 h-3 text-slate-400" />
-                  {message.retrievedChunks} chunks retrieved
+                  {message.retrievedChunks} chunks
                 </span>
               )}
             </div>

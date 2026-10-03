@@ -24,9 +24,13 @@ class Settings(BaseSettings):
 
     # RAG & Ingestion Hyperparameters
     TOP_K: int = 5
+    INITIAL_TOP_K: int = 12
+    FINAL_TOP_K: int = 5
+    MAX_CONTEXT_CHARS: int = 12000
+    ENABLE_DOCUMENT_BALANCING: bool = True
     CHUNK_SIZE: int = 1000
     CHUNK_OVERLAP: int = 150
-    SIMILARITY_THRESHOLD: float = 0.35
+    SIMILARITY_THRESHOLD: float = 0.15
 
     # Cross-Encoder Reranker Settings
     RERANKER_ENABLED: bool = False

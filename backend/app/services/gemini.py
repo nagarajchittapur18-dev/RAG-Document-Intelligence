@@ -9,19 +9,21 @@ from app.services.vector_store import SearchResult
 logger = logging.getLogger("ragmate.gemini")
 
 SAFE_FALLBACK_ANSWER = (
-    "I could not find sufficient information in the uploaded documents to answer this question."
+    "I could not find sufficient information in the selected documents to answer this question."
 )
 
-SYSTEM_PROMPT_TEMPLATE = """You are an intelligent document assistant.
+SYSTEM_PROMPT_TEMPLATE = """You are DocuRAG, an intelligent document question answering assistant.
 Your task is to answer the user's question using exclusively the provided document context excerpts.
 
 Strict Grounding Guidelines:
 1. Use ONLY information directly supported by the retrieved context snippets.
 2. Do NOT extrapolate, speculate, or invent facts not stated in the context.
-3. If the retrieved context does not contain enough information to formulate an accurate answer, state exactly:
-   "I could not find sufficient information in the uploaded documents to answer this question."
-4. When formulating the answer, reference the source document names and page numbers where applicable.
-5. Maintain a professional, concise, academic tone.
+3. The context may contain information from one or multiple documents. Keep information from different documents clearly distinguished.
+4. When comparing documents (methodologies, datasets, results, algorithms, objectives), explicitly identify which document supports each claim and format the response with structured sections (e.g. per-document findings and key differences).
+5. When formulating the answer, reference the source document names and page numbers where applicable.
+6. If the retrieved context does not contain enough information to formulate an accurate answer, state exactly:
+   "I could not find sufficient information in the selected documents to answer this question."
+7. Maintain a professional, concise, academic tone.
 """
 
 
@@ -47,7 +49,8 @@ class RAGResponse(BaseModel):
 class GeminiService:
     """
     RAG generation service interfacing with Google Gemini.
-    Enforces factual grounding, citation generation, and hallucination defense.
+    Enforces factual grounding, multi-document distinction, citation generation,
+    and hallucination defense.
     """
 
     def __init__(
@@ -87,16 +90,29 @@ class GeminiService:
                 self._client = None
 
     def construct_context_block(self, contexts: List[SearchResult]) -> str:
-        """Constructs an indexed, provenance-tracked context block for prompting."""
+        """
+        Constructs an indexed, provenance-tracked context block grouped by document
+        with clear source boundaries for accurate multi-document reasoning.
+        """
         if not contexts:
             return "No relevant document excerpts were retrieved."
 
-        blocks: List[str] = []
-        for i, ctx in enumerate(contexts, 1):
-            source_header = f"[Source {i}: {ctx.document_name} | Page {ctx.page_number} | Chunk {ctx.chunk_id}]"
-            blocks.append(f"{source_header}\n{ctx.text.strip()}")
+        # Group by document for clear provenance boundaries
+        doc_grouped: Dict[str, List[SearchResult]] = {}
+        for ctx in contexts:
+            doc_key = f"{ctx.document_name} (ID: {ctx.document_id})"
+            doc_grouped.setdefault(doc_key, []).append(ctx)
 
-        return "\n\n---\n\n".join(blocks)
+        doc_sections: List[str] = []
+        source_idx = 1
+        for doc_header, chunks in doc_grouped.items():
+            lines = [f"=== DOCUMENT: {doc_header} ==="]
+            for c in chunks:
+                lines.append(f"\n[Source {source_idx}: {c.document_name} | Page {c.page_number} | Chunk {c.chunk_id}]\n{c.text.strip()}")
+                source_idx += 1
+            doc_sections.append("\n".join(lines))
+
+        return "\n\n" + ("\n\n" + "-" * 40 + "\n\n").join(doc_sections)
 
     def generate_grounded_answer(
         self,
@@ -111,18 +127,23 @@ class GeminiService:
         t_start = time.perf_counter()
         clean_question = question.strip()
 
-        # Build citation objects from retrieved contexts
-        sources = [
-            CitationSource(
-                document_id=c.document_id,
-                document_name=c.document_name,
-                page_number=c.page_number,
-                chunk_id=c.chunk_id,
-                similarity_score=c.similarity_score,
-                snippet=c.text[:200].strip() + ("..." if len(c.text) > 200 else ""),
-            )
-            for c in contexts
-        ]
+        # Build deduplicated citation objects from retrieved contexts
+        seen_sources = set()
+        sources: List[CitationSource] = []
+        for c in contexts:
+            s_key = (str(c.document_id), str(c.chunk_id))
+            if s_key not in seen_sources:
+                seen_sources.add(s_key)
+                sources.append(
+                    CitationSource(
+                        document_id=c.document_id,
+                        document_name=c.document_name,
+                        page_number=c.page_number,
+                        chunk_id=c.chunk_id,
+                        similarity_score=c.similarity_score,
+                        snippet=c.text[:200].strip() + ("..." if len(c.text) > 200 else ""),
+                    )
+                )
 
         # Hallucination Guard: If no contexts retrieved, return safe fallback immediately
         if not contexts:
@@ -175,7 +196,11 @@ class GeminiService:
             clean_answer = raw_answer.strip()
 
             # Determine whether answer is grounded or fallback
-            is_grounded = SAFE_FALLBACK_ANSWER.lower() not in clean_answer.lower()
+            is_grounded = (
+                SAFE_FALLBACK_ANSWER.lower() not in clean_answer.lower()
+                and "not find sufficient information in the" not in clean_answer.lower()
+                and "could not find sufficient information" not in clean_answer.lower()
+            )
 
             elapsed_ms = (time.perf_counter() - t_start) * 1000
             logger.info(

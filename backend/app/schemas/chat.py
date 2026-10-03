@@ -33,17 +33,23 @@ class AskQuestionResponse(BaseModel):
     answer: str = Field(..., description="Grounded answer synthesized by Gemini or safe fallback")
     sources: List[SourceCitation] = Field(default_factory=list, description="Preserved provenance citations")
     retrieved_chunks: int = Field(0, description="Count of retrieved context chunks")
+    documents_searched: int = Field(0, description="Count of distinct documents searched")
     response_time_ms: float = Field(0.0, description="Total pipeline latency in milliseconds")
     session_id: Optional[str] = Field(None, description="Chat session ID if conversation is tracked")
 
 
 class CreateSessionRequest(BaseModel):
     title: Optional[str] = Field("New Conversation", description="Title for the chat session")
+    document_ids: Optional[List[str]] = Field(
+        default=None,
+        description="Optional list of document IDs to bind to this session",
+    )
 
 
 class ChatSessionItem(BaseModel):
     id: str
     title: str
+    document_ids: List[str] = Field(default_factory=list)
     created_at: str
     updated_at: str
 

@@ -137,6 +137,19 @@ class DatabaseManager:
                 )
                 """
             )
+
+            # 5. Chat session documents table (many-to-many relationship for document scope)
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS chat_session_documents (
+                    session_id TEXT NOT NULL,
+                    document_id TEXT NOT NULL,
+                    PRIMARY KEY (session_id, document_id),
+                    FOREIGN KEY (session_id) REFERENCES chat_sessions(id),
+                    FOREIGN KEY (document_id) REFERENCES documents(id)
+                )
+                """
+            )
             conn.commit()
 
     # =========================================================================
@@ -247,6 +260,9 @@ class DatabaseManager:
 
     def delete_document(self, document_id: str, user_id: Optional[str] = None) -> bool:
         with self._get_connection() as conn:
+            # Clean up any session associations first
+            conn.execute("DELETE FROM chat_session_documents WHERE document_id = ?", (str(document_id),))
+
             if user_id:
                 cur = conn.execute(
                     "DELETE FROM documents WHERE id = ? AND user_id = ?",
@@ -261,7 +277,12 @@ class DatabaseManager:
     # CHAT SESSIONS & MESSAGES REPOSITORY
     # =========================================================================
 
-    def create_chat_session(self, user_id: str, title: str) -> ChatSessionRecord:
+    def create_chat_session(
+        self,
+        user_id: str,
+        title: str,
+        document_ids: Optional[List[str]] = None,
+    ) -> ChatSessionRecord:
         session_id = uuid.uuid4().hex[:12]
         now_iso = datetime.now(timezone.utc).isoformat()
         with self._get_connection() as conn:
@@ -272,6 +293,12 @@ class DatabaseManager:
                 """,
                 (session_id, str(user_id), title.strip(), now_iso, now_iso),
             )
+            if document_ids:
+                for doc_id in document_ids:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO chat_session_documents (session_id, document_id) VALUES (?, ?)",
+                        (session_id, str(doc_id)),
+                    )
             conn.commit()
 
         return ChatSessionRecord(
@@ -281,6 +308,26 @@ class DatabaseManager:
             created_at=now_iso,
             updated_at=now_iso,
         )
+
+    def bind_session_documents(self, session_id: str, document_ids: List[str]):
+        """Associates or updates the active document scope for a chat session."""
+        with self._get_connection() as conn:
+            conn.execute("DELETE FROM chat_session_documents WHERE session_id = ?", (str(session_id),))
+            for doc_id in document_ids:
+                conn.execute(
+                    "INSERT OR IGNORE INTO chat_session_documents (session_id, document_id) VALUES (?, ?)",
+                    (str(session_id), str(doc_id)),
+                )
+            conn.commit()
+
+    def get_session_documents(self, session_id: str) -> List[str]:
+        """Retrieves list of document IDs bound to a chat session."""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT document_id FROM chat_session_documents WHERE session_id = ?",
+                (str(session_id),),
+            ).fetchall()
+            return [str(r["document_id"]) for r in rows]
 
     def list_chat_sessions_for_user(self, user_id: str) -> List[ChatSessionRecord]:
         with self._get_connection() as conn:
@@ -302,7 +349,16 @@ class DatabaseManager:
 
     def delete_chat_session(self, session_id: str, user_id: str) -> bool:
         with self._get_connection() as conn:
-            # Delete messages first
+            # Delete session document links
+            conn.execute(
+                """
+                DELETE FROM chat_session_documents WHERE session_id IN (
+                    SELECT id FROM chat_sessions WHERE id = ? AND user_id = ?
+                )
+                """,
+                (str(session_id), str(user_id)),
+            )
+            # Delete messages
             conn.execute(
                 """
                 DELETE FROM messages WHERE session_id IN (
