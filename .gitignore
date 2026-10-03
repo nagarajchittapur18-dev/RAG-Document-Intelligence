@@ -53,7 +53,9 @@ pnpm-debug.log*
 
 # ChromaDB & Vector Store Data
 backend/chroma_data/
+backend/*chroma_data*/
 chroma_data/
+*chroma_data*/
 !backend/chroma_data/.gitkeep
 
 # Uploads
