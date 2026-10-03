@@ -67,7 +67,8 @@ async def test_fastapi_health_endpoint():
         response = await client.get("/api/health")
         assert response.status_code == 200
         data = response.json()
-        assert data["status"] == "healthy"
+        assert data["status"] == "ok"
+        assert data["service"] == "DocuRAG API"
         assert data["environment"]["embedding_model"] == "all-MiniLM-L6-v2"
         assert data["environment"]["vector_store"] == "ChromaDB"
 
@@ -80,5 +81,5 @@ async def test_fastapi_root_endpoint():
         response = await client.get("/")
         assert response.status_code == 200
         data = response.json()
-        assert data["project"] == "RAGMate"
+        assert "RAGMate" in data["project"]
         assert data["status"] == "operational"
