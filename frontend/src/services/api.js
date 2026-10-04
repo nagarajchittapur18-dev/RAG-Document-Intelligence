@@ -217,7 +217,85 @@ export const api = {
     if (topK) {
       payload.top_k = topK;
     }
-    const res = await apiClient.post(`/chat/sessions/${sessionId}/messages`, payload);
+  },
+
+  // ==========================================
+  // EVALUATION & BENCHMARK APIS
+  // ==========================================
+
+  /**
+   * List all recorded evaluation benchmark experiments
+   */
+  async getExperiments() {
+    const res = await apiClient.get('/evaluation/experiments');
+    return res.data;
+  },
+
+  /**
+   * Get detailed configuration and metrics for a specific experiment
+   */
+  async getExperimentDetail(experimentId) {
+    const res = await apiClient.get(`/evaluation/experiments/${experimentId}`);
+    return res.data;
+  },
+
+  /**
+   * Get question-level query results for an experiment with optional search and filters
+   */
+  async getExperimentQueries(experimentId, params = {}) {
+    const res = await apiClient.get(`/evaluation/experiments/${experimentId}/queries`, { params });
+    return res.data;
+  },
+
+  /**
+   * Get error analysis report for an experiment
+   */
+  async getExperimentErrorAnalysis(experimentId) {
+    const res = await apiClient.get(`/evaluation/experiments/${experimentId}/error-analysis`);
+    return res.data;
+  },
+
+  /**
+   * Get summary of the academic evaluation dataset
+   */
+  async getDatasetSummary() {
+    const res = await apiClient.get('/evaluation/dataset/summary');
+    return res.data;
+  },
+
+  /**
+   * Get full metadata for an evaluation question
+   */
+  async getEvaluationQuestion(questionId) {
+    const res = await apiClient.get(`/evaluation/dataset/questions/${questionId}`);
+    return res.data;
+  },
+
+  /**
+   * Run a new benchmark evaluation
+   */
+  async runBenchmark(payload = {}) {
+    const res = await apiClient.post('/evaluation/run-benchmark', payload);
+    return res.data;
+  },
+
+  /**
+   * Export experiment queries as CSV or JSON blob
+   */
+  async exportExperiment(experimentId, format = 'csv') {
+    const res = await apiClient.get(`/evaluation/experiments/${experimentId}/export`, {
+      params: { format },
+      responseType: format === 'csv' ? 'blob' : 'json',
+    });
+    return res.data;
+  },
+
+  /**
+   * Real-time comparative evaluation of a single query
+   */
+  async compareRetrieval(question, documentIds = null, candidateK = 15, finalK = 5) {
+    const payload = { question, document_ids: documentIds, candidate_k: candidateK, final_k: finalK };
+    const res = await apiClient.post('/evaluation/retrieval-compare', payload);
     return res.data;
   },
 };

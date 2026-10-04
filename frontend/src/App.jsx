@@ -9,6 +9,7 @@ import Dashboard from './pages/Dashboard';
 import Documents from './pages/Documents';
 import DocumentDetails from './pages/DocumentDetails';
 import Chat from './pages/Chat';
+import Evaluation from './pages/Evaluation';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import { CheckCircle2, AlertCircle, Info } from 'lucide-react';
@@ -65,6 +66,7 @@ function MainLayout() {
             <Route path="/documents" element={<Documents />} />
             <Route path="/documents/:id" element={<DocumentDetails />} />
             <Route path="/chat" element={<Chat />} />
+            <Route path="/evaluation" element={<Evaluation />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

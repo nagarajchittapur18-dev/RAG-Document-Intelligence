@@ -9,6 +9,7 @@ import {
   ArrowRight,
   Sparkles,
   TrendingUp,
+  BarChart3,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import DocumentUploader from '../components/DocumentUploader';
@@ -83,6 +84,13 @@ export default function Dashboard() {
             >
               <MessageSquare className="w-4 h-4" />
               Open AI Chat
+            </Link>
+            <Link
+              to="/evaluation"
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm transition-colors"
+            >
+              <BarChart3 className="w-4 h-4" />
+              Evaluation Benchmark
             </Link>
             <Link
               to="/documents"

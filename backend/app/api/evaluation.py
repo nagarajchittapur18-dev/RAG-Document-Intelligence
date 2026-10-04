@@ -17,6 +17,7 @@ from app.schemas.evaluation import (
 from app.services.document_store import DatabaseManager, UserRecord
 from app.services.evaluation_engine import (
     DEFAULT_DATASET_PATH,
+    REPORTS_DIR,
     RESULTS_DIR,
     EvaluationEngine,
 )
@@ -310,3 +311,169 @@ async def get_experiment_detail(
         data = json.load(f)
 
     return data
+
+
+@router.get(
+    "/experiments/{experiment_id}/queries",
+    status_code=status.HTTP_200_OK,
+    summary="Get question-level results for a specific experiment with optional filtering and pagination",
+)
+async def get_experiment_queries(
+    experiment_id: str,
+    search: Optional[str] = None,
+    question_type: Optional[str] = None,
+    difficulty: Optional[str] = None,
+    error_classification: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 50,
+    current_user: UserRecord = Depends(get_current_user),
+):
+    clean_id = experiment_id.strip()
+    target_file = RESULTS_DIR / f"{clean_id}_queries.json"
+    if not target_file.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Queries artifact for experiment '{clean_id}' not found.",
+        )
+
+    with open(target_file, "r", encoding="utf-8") as f:
+        queries = json.load(f)
+
+    filtered = queries
+    if search:
+        s_lower = search.strip().lower()
+        filtered = [
+            q for q in filtered
+            if s_lower in q.get("id", "").lower()
+            or s_lower in q.get("question", "").lower()
+        ]
+    if question_type and question_type.lower() != "all":
+        filtered = [q for q in filtered if q.get("question_type") == question_type]
+    if difficulty and difficulty.lower() != "all":
+        filtered = [q for q in filtered if q.get("difficulty") == difficulty]
+    if error_classification and error_classification.lower() != "all":
+        filtered = [q for q in filtered if q.get("error_classification") == error_classification]
+
+    total_count = len(filtered)
+    start_idx = (page - 1) * page_size
+    end_idx = start_idx + page_size
+    paged_items = filtered[start_idx:end_idx]
+
+    return {
+        "experiment_id": clean_id,
+        "total": total_count,
+        "page": page,
+        "page_size": page_size,
+        "items": paged_items,
+    }
+
+
+@router.get(
+    "/experiments/{experiment_id}/error-analysis",
+    status_code=status.HTTP_200_OK,
+    summary="Get error analysis report for an experiment",
+)
+async def get_experiment_error_analysis(
+    experiment_id: str,
+    current_user: UserRecord = Depends(get_current_user),
+):
+    clean_id = experiment_id.strip()
+    target_file = REPORTS_DIR / f"{clean_id}_error_analysis.json"
+    if not target_file.exists():
+        target_file = REPORTS_DIR / "error_analysis.json"
+    if not target_file.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Error analysis for experiment '{clean_id}' not found.",
+        )
+
+    with open(target_file, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    return data
+
+
+@router.get(
+    "/experiments/{experiment_id}/export",
+    summary="Export experiment questions and metrics in CSV or JSON format",
+)
+async def export_experiment(
+    experiment_id: str,
+    format: str = "json",
+    current_user: UserRecord = Depends(get_current_user),
+):
+    clean_id = experiment_id.strip()
+    target_file = RESULTS_DIR / f"{clean_id}_queries.json"
+    if not target_file.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Queries artifact for experiment '{clean_id}' not found.",
+        )
+
+    with open(target_file, "r", encoding="utf-8") as f:
+        queries = json.load(f)
+
+    if format.lower() == "csv":
+        import csv
+        import io
+        from fastapi.responses import Response
+
+        output = io.StringIO()
+        fieldnames = [
+            "id", "question", "question_type", "difficulty",
+            "vector_mrr", "reranked_mrr", "vector_latency_ms",
+            "rerank_latency_ms", "total_latency_ms", "error_classification"
+        ]
+        writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore")
+        writer.writeheader()
+        for q in queries:
+            writer.writerow(q)
+
+        return Response(
+            content=output.getvalue(),
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{clean_id}_results.csv"'},
+        )
+
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        content=queries,
+        headers={"Content-Disposition": f'attachment; filename="{clean_id}_results.json"'},
+    )
+
+
+@router.get(
+    "/dataset/questions/{question_id}",
+    status_code=status.HTTP_200_OK,
+    summary="Get full metadata and reference answer for a specific evaluation question",
+)
+async def get_question_detail(
+    question_id: str,
+    current_user: UserRecord = Depends(get_current_user),
+):
+    if not DEFAULT_DATASET_PATH.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Evaluation dataset not found on disk.",
+        )
+
+    with open(DEFAULT_DATASET_PATH, "r", encoding="utf-8") as f:
+        dataset = json.load(f)
+
+    clean_qid = question_id.strip().upper()
+    for item in dataset:
+        if item.get("id", "").upper() == clean_qid:
+            return item
+
+    # Flexible numeric normalization (e.g. Q1 or Q01 matching Q001)
+    if clean_qid.startswith("Q") and clean_qid[1:].isdigit():
+        num = int(clean_qid[1:])
+        padded_variants = {f"Q{num:03d}", f"Q{num:02d}", f"Q{num}"}
+        for item in dataset:
+            if item.get("id", "").upper() in padded_variants:
+                return item
+
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=f"Evaluation question '{question_id}' not found in dataset.",
+    )
+

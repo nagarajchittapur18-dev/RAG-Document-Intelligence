@@ -9,6 +9,7 @@ import {
   Sparkles,
   X,
   Database,
+  BarChart3,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
@@ -44,6 +45,11 @@ export default function Sidebar({ isOpen, onClose }) {
       label: 'AI Chat',
       icon: MessageSquare,
       highlight: true,
+    },
+    {
+      to: '/evaluation',
+      label: 'Evaluation',
+      icon: BarChart3,
     },
   ];
 
