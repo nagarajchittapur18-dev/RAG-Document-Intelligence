@@ -101,8 +101,10 @@ export default function SourceCard({ source, index, cardId }) {
             {source.snippet.length > 160 ? (
               <button
                 type="button"
+                aria-expanded={expandedSnippet}
+                aria-label={expandedSnippet ? `Collapse excerpt for [${citationId}]` : `Expand full excerpt for [${citationId}]`}
                 onClick={() => setExpandedSnippet(!expandedSnippet)}
-                className="inline-flex items-center gap-1 text-[11px] font-medium text-brand-600 hover:text-brand-700 transition-colors"
+                className="inline-flex items-center gap-1 text-[11px] font-medium text-brand-600 hover:text-brand-700 focus:outline-hidden focus:ring-2 focus:ring-brand-500 rounded transition-colors"
               >
                 {expandedSnippet ? (
                   <>
@@ -119,8 +121,10 @@ export default function SourceCard({ source, index, cardId }) {
             {/* View Full Page Text Verification Button */}
             <button
               type="button"
+              aria-expanded={showPageViewer}
+              aria-label={`Verify page ${source.page_number} text for ${source.document_name}`}
               onClick={handleTogglePageViewer}
-              className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded border transition-colors ${
+              className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded border focus:outline-hidden focus:ring-2 focus:ring-brand-500 transition-colors ${
                 showPageViewer
                   ? 'bg-brand-50 text-brand-700 border-brand-200'
                   : 'bg-white text-slate-600 hover:text-brand-600 border-slate-200 hover:border-brand-200'
