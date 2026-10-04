@@ -233,29 +233,72 @@ Covered Test Modules:
 
 ## 11. Quantitative Research Evaluation
 
-DocuRAG incorporates an evaluation dataset of **60 verified ground-truth questions** across a **24-page academic corpus** (3 peer-reviewed research papers).
+DocuRAG incorporates a formal Cranfield evaluation suite tested against **60 verified ground-truth questions** across a **24-page academic corpus** (3 seminal peer-reviewed research papers: Vaswani et al. 2017, Karpukhin et al. 2020, Nogueira & Cho 2019).
 
 ```bash
+# Execute Cranfield benchmark suite
 python -m evaluation.scripts.run_evaluation
 ```
 
-Empirical Findings:
-- **Precision@K**: Improved from 0.68 (pure vector) to 0.84 (reranked).
-- **MRR (Mean Reciprocal Rank)**: 0.91.
-- **Median Vector Search Latency**: 12.82 ms.
-- **Median Reranker Latency (Warm)**: 133.00 ms.
-- Results are dynamically explored in the frontend **Evaluation Dashboard** (`/evaluation`).
+### Empirical Measured Findings (Experiment `EXP_20261004_065505_60`):
+| Evaluation Metric | Stage 1: Vector Search | Stage 2: Cross-Encoder Reranked | Delta Gain | Relative Improvement |
+|---|:---:|:---:|:---:|:---:|
+| **Precision@5** | 0.2481 | **0.2630** | +0.0148 | **+6.01%** |
+| **Recall@5** | 0.9506 | **0.9938** | +0.0432 | **+4.54%** |
+| **Hit Rate@5** | 0.9815 | **1.0000** | +0.0185 | **+1.89% (100% Coverage)** |
+| **Hit Rate@10** | 0.9815 | **1.0000** | +0.0185 | **+1.89% (100% Coverage)** |
+| **Overall MRR** | **0.9228** | 0.9188 | -0.0040 | -0.43% |
+| **Comparison MRR** | 0.8500 | **0.9333** | +0.0833 | **+9.76%** |
+| **Algorithm MRR** | 0.8750 | **0.9500** | +0.0750 | **+8.75%** |
+| **Abstention Accuracy** | **1.0000** | **1.0000** | 0.0000 | **100.0% Safe Refusal** |
+
+- **Median Vector Retrieval Latency**: 12.82 ms.
+- **Median Cross-Encoder Latency (15 candidates)**: 133.00 ms.
+- **Median Gemini 2.5 Flash Generation Latency**: 1,310.00 ms.
+- **Median End-to-End System Response**: 1,455.82 ms (~1.46s).
+- Results can be dynamically explored in the frontend **Evaluation Dashboard** (`/evaluation`).
 
 ---
 
-## 12. Limitations & Future Enhancements
+## 12. Academic Documentation & Viva Voce Suite
 
-- **Limitations**: Optical Character Recognition (OCR) for scanned image-only PDFs is not included; free-tier hosting cold starts can incur 40s wake-up times.
-- **Future Enhancements**: Tesseract OCR integration, hybrid sparse-dense search (BM25 + Dense HNSW), Redis distributed session caching, and multi-modal document figure understanding.
+Comprehensive academic documentation, dissertation chapters, research papers, and viva voce preparation guides are maintained in the [`docs/`](docs/) directory:
+
+- [docs/project-report.md](docs/project-report.md) — Complete 17-Chapter MCA Major Project Dissertation.
+- [docs/research-paper.md](docs/research-paper.md) — IEEE/ACM Conference Format Research Paper.
+- [docs/viva-master-summary.md](docs/viva-master-summary.md) — 25-Section Master Project Summary for Defense.
+- [docs/viva-cheat-sheet.md](docs/viva-cheat-sheet.md) — 2-Page Rapid Revision Cheat Sheet.
+- [docs/project-explanation.md](docs/project-explanation.md) — 30-Second, 1-Minute, 3-Minute, and 5-Minute Technical Explanations.
+- [docs/presentation-content.md](docs/presentation-content.md) — 20-Slide Structured Presentation Content.
+- [docs/presentation-speaker-notes.md](docs/presentation-speaker-notes.md) — Complete Slide-by-Slide Speaker Notes & Examiner Questions.
+- [docs/demo-script.md](docs/demo-script.md) — 20-Step Live Demonstration Protocol & Failure Recovery Plan.
+- [docs/demo-questions.md](docs/demo-questions.md) — Categorized Live Demo Questions with Expected Answers.
+- [docs/viva-question-bank.md](docs/viva-question-bank.md) — 100+ Technical Viva Questions with Top 25 ⭐⭐⭐ Highlighted.
+- [docs/advanced-viva-questions.md](docs/advanced-viva-questions.md) — 25+ Advanced Architectural & Mathematical Questions.
+- [docs/research-viva-questions.md](docs/research-viva-questions.md) — Researcher-Level Questions (Novelty, Baselines, Bias, 10M Scaling).
+- [docs/interview-questions.md](docs/interview-questions.md) — Technical Placement Q&A, Resume Bullets, GitHub & LinkedIn Descriptions.
+- [docs/presentation-checklist.md](docs/presentation-checklist.md) — Pre-Viva Verification & Physical Readiness Checklist.
+- [docs/results-analysis.md](docs/results-analysis.md) — Empirical Evaluation Breakdown & Error Taxonomy.
+- [docs/testing-report.md](docs/testing-report.md) — IEEE 829-2008 System Verification Report (119/119 Tests Passing).
 
 ---
 
-## 13. Public Demo & Cloud Endpoints
+## 13. Limitations & Future Enhancements
+
+- **Limitations**:
+  - Re-ranking latency scales linearly on CPU ($O(M)$), bounding candidate pools to $\le 20$.
+  - Dual in-memory transformer models require ~450 MB resident RAM.
+  - Optical Character Recognition (OCR) for scanned image-only PDFs is not included (`ScannedPDFError` is raised).
+  - Single-hop retrieval architecture cannot autonomously decompose complex multi-hop queries.
+- **Future Enhancements**:
+  - ColBERT-style token-level late interaction (MaxSim operator) for bi-encoder speed with cross-encoder quality.
+  - Graph-RAG integration for entity-relationship knowledge graph traversal.
+  - Domain-specific cross-encoder fine-tuning on legal and medical corpora.
+  - Embedded Tesseract/PaddleOCR for scanned document parsing.
+
+---
+
+## 14. Public Demo & Cloud Endpoints
 
 - **Live Frontend Web Application**: [https://docurag.vercel.app](https://docurag.vercel.app) *(or your Vercel deployment URL)*
 - **Backend API**: [https://docurag-api.onrender.com](https://docurag-api.onrender.com)
@@ -263,5 +306,5 @@ Empirical Findings:
 
 ---
 
-## 14. License
+## 15. License
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
