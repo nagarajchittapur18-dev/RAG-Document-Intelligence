@@ -14,6 +14,13 @@ export default function SourceCard({ source, index, cardId }) {
     ? source.relevance_score
     : source.similarity_score;
 
+  const hasRerank = source.rerank_score !== undefined && source.rerank_score !== null;
+  const rerankPercent = hasRerank ? Math.round(source.rerank_score * 100) : null;
+  const vectorScore = source.retrieval_score ?? source.similarity_score;
+  const vectorPercent = vectorScore !== undefined && vectorScore !== null
+    ? Math.round(vectorScore * 100)
+    : null;
+
   const scorePercent = rawScore !== undefined && rawScore !== null
     ? Math.round(rawScore * 100)
     : null;
@@ -65,20 +72,47 @@ export default function SourceCard({ source, index, cardId }) {
           </span>
         </div>
 
-        {/* Relevance Score Pill */}
-        {scorePercent !== null && (
-          <span
-            className={`text-[10px] font-mono font-medium px-2 py-0.5 rounded-full shrink-0 border ${
-              scorePercent >= 75
-                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                : scorePercent >= 50
-                ? 'bg-blue-50 text-blue-700 border-blue-200'
-                : 'bg-slate-100 text-slate-600 border-slate-200'
-            }`}
-          >
-            Relevance: {scorePercent}%
-          </span>
-        )}
+        {/* Dual / Single Relevance Score Pills */}
+        <div className="flex items-center gap-1 shrink-0">
+          {hasRerank ? (
+            <>
+              <span
+                title={`Cross-encoder reranking score: ${(source.rerank_score).toFixed(4)}`}
+                className={`text-[10px] font-mono font-medium px-2 py-0.5 rounded-full border ${
+                  rerankPercent >= 75
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : rerankPercent >= 50
+                    ? 'bg-blue-50 text-blue-700 border-blue-200'
+                    : 'bg-slate-100 text-slate-600 border-slate-200'
+                }`}
+              >
+                Rerank: {rerankPercent}%
+              </span>
+              {vectorPercent !== null && (
+                <span
+                  title={`Initial vector similarity: ${(vectorScore).toFixed(4)}`}
+                  className="text-[9px] font-mono text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200/80 hidden sm:inline"
+                >
+                  Vector: {vectorPercent}%
+                </span>
+              )}
+            </>
+          ) : (
+            scorePercent !== null && (
+              <span
+                className={`text-[10px] font-mono font-medium px-2 py-0.5 rounded-full border ${
+                  scorePercent >= 75
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : scorePercent >= 50
+                    ? 'bg-blue-50 text-blue-700 border-blue-200'
+                    : 'bg-slate-100 text-slate-600 border-slate-200'
+                }`}
+              >
+                Relevance: {scorePercent}%
+              </span>
+            )
+          )}
+        </div>
       </div>
 
       {/* Chunk ID subheader */}

@@ -206,7 +206,48 @@ npm run dev
 
 ---
 
-## 11. Academic Evaluation & Research Methodology
+## 11. Two-Stage Retrieval & Reranking Architecture (Phase 11)
+
+To ensure both high recall and high precision in document question answering, DocuRAG employs a **two-stage retrieval pipeline**:
+
+```text
+User Question
+      ↓
+Query Rewriter (Coreference & Context Resolution)
+      ↓
+Stage 1: ChromaDB Dense Semantic Search (Candidate Pool N = 10–20 chunks)
+      ↓
+Stage 2: Cross-Encoder Reranking (ms-marco-MiniLM-L-6-v2)
+      ↓
+Comparison Query Balancing (Prevents source starvation across multiple documents)
+      ↓
+Final Grounded Context (Top K = 3–5 chunks within character budget)
+      ↓
+Google Gemini LLM Generation
+      ↓
+Answer with Verified Inline Citations [1], [2]
+```
+
+### Key Technical Details
+1. **High Recall + High Precision**:
+   - Initial vector search retrieves a wider candidate pool ($N = 15$) to minimize false negatives.
+   - The Cross-Encoder scores $(query, chunk)$ pairs jointly with full self-attention across tokens, producing accurate relevance scores normalized via sigmoid:
+     $$\sigma(z) = \frac{1}{1 + e^{-z}}$$
+2. **Deterministic Comparison Query Detection**:
+   - Comparison queries (`compare`, `versus`, `difference`, `between`) automatically trigger balanced document selection across the reranked candidate pool to ensure multi-paper questions retain evidence from both documents.
+3. **Resilient CPU / GPU Execution & Graceful Fallback**:
+   - Reranker automatically detects and uses CUDA if available, falling back smoothly to CPU on student/laptop hardware.
+   - If reranking fails or is disabled via configuration (`RERANKING_ENABLED=false`), the system gracefully defaults to pure vector similarity ranking without interrupting generation or throwing user-facing errors.
+4. **Configuration Hyperparameters (`app/config.py`)**:
+   - `RERANKING_ENABLED: bool = True` (toggleable runtime setting)
+   - `RERANKER_MODEL: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"`
+   - `RERANKING_CANDIDATES: int = 15` (candidate pool size)
+   - `RERANKING_TOP_K: int = 5` (final selected chunks)
+   - `MAX_RERANK_TEXT_LENGTH: int = 1000` (scoring input length boundary)
+
+---
+
+## 12. Academic Evaluation & Research Methodology
 The evaluation module benchmarks queries across three retrieval configurations:
 $$\text{Precision@K} = \frac{|\text{Relevant Chunks Retrieved in Top K}|}{K}$$
 $$\text{Recall@K} = \frac{|\text{Relevant Chunks Retrieved in Top K}|}{|\text{Total Relevant Chunks for Query}|}$$

@@ -35,8 +35,13 @@ class Settings(BaseSettings):
     CHAT_MESSAGE_PAGE_SIZE: int = 50
 
     # Cross-Encoder Reranker Settings
-    RERANKER_ENABLED: bool = False
+    RERANKER_ENABLED: bool = True
+    RERANKING_ENABLED: bool = True
     RERANKER_MODEL: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    RERANKING_CANDIDATES: int = 15
+    RERANKING_TOP_K: int = 5
+    MAX_RERANK_TEXT_LENGTH: int = 1000
+    RAG_DEBUG: bool = False
 
     # File Storage Settings
     UPLOAD_DIRECTORY: str = "./uploads"

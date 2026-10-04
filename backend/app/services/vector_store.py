@@ -19,6 +19,7 @@ class SearchResult(BaseModel):
     page_number: int = Field(..., description="1-indexed source page number")
     text: str = Field(..., description="Text content of the retrieved chunk")
     similarity_score: float = Field(..., description="Cosine similarity score (0.0 to 1.0)")
+    rerank_score: Optional[float] = Field(None, description="Cross-encoder relevance score (0.0 to 1.0)")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Complete chunk metadata")
 
 

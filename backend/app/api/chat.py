@@ -163,6 +163,8 @@ async def _process_chat_query(
                         chunk_id=s.chunk_id,
                         similarity_score=s.similarity_score,
                         relevance_score=getattr(s, "relevance_score", s.similarity_score),
+                        retrieval_score=getattr(s, "retrieval_score", s.similarity_score),
+                        rerank_score=getattr(s, "rerank_score", None),
                         snippet=s.snippet,
                     )
                 )
@@ -191,6 +193,15 @@ async def _process_chat_query(
             rag_response.is_grounded,
         )
 
+        debug_info = None
+        if getattr(settings, "RAG_DEBUG", False):
+            debug_info = {
+                "reranker_enabled": getattr(settings, "RERANKING_ENABLED", True),
+                "reranker_model": getattr(settings, "RERANKER_MODEL", ""),
+                "retrieved_chunks": len(contexts),
+                "documents_searched": documents_searched,
+            }
+
         return AskQuestionResponse(
             answer=rag_response.answer,
             sources=citation_sources,
@@ -198,6 +209,7 @@ async def _process_chat_query(
             documents_searched=documents_searched,
             response_time_ms=round(total_latency_ms, 2),
             session_id=active_session_id,
+            retrieval_debug=debug_info,
         )
 
     except HTTPException:

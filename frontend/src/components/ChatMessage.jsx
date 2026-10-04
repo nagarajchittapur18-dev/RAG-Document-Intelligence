@@ -189,9 +189,16 @@ export default function ChatMessage({ message }) {
                 </span>
               )}
             </div>
-            <span className="text-[10px] uppercase font-semibold text-brand-600 bg-brand-50 px-2 py-0.5 rounded border border-brand-100">
-              Grounded Response
-            </span>
+            <div className="flex items-center gap-2">
+              {message.sources && message.sources.some(s => s.rerank_score !== undefined && s.rerank_score !== null) && (
+                <span className="text-[10px] font-mono font-medium text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200/80">
+                  ⚡ Reranked
+                </span>
+              )}
+              <span className="text-[10px] uppercase font-semibold text-brand-600 bg-brand-50 px-2 py-0.5 rounded border border-brand-100">
+                Grounded Response
+              </span>
+            </div>
           </div>
         </div>
       </div>

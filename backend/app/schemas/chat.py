@@ -42,6 +42,8 @@ class SourceCitation(BaseModel):
     chunk_id: str = Field(..., description="Deterministic chunk ID")
     similarity_score: Optional[float] = Field(None, description="Cosine similarity score")
     relevance_score: Optional[float] = Field(None, description="Normalized relevance score (0.00 - 1.00)")
+    retrieval_score: Optional[float] = Field(None, description="Initial vector similarity score (0.00 - 1.00)")
+    rerank_score: Optional[float] = Field(None, description="Cross-encoder reranking relevance score (0.00 - 1.00)")
     snippet: Optional[str] = Field(None, description="Excerpt preview (300-500 chars)")
 
 
@@ -52,6 +54,7 @@ class AskQuestionResponse(BaseModel):
     documents_searched: int = Field(0, description="Count of distinct documents searched")
     response_time_ms: float = Field(0.0, description="Total pipeline latency in milliseconds")
     session_id: Optional[str] = Field(None, description="Chat session ID if conversation is tracked")
+    retrieval_debug: Optional[Dict[str, Any]] = Field(None, description="Optional diagnostic metrics for retrieval and reranking")
 
 
 class CreateSessionRequest(BaseModel):

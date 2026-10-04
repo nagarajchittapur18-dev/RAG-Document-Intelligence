@@ -105,6 +105,8 @@ class CitationSource(BaseModel):
     chunk_id: str
     similarity_score: float
     relevance_score: float = 0.0
+    retrieval_score: Optional[float] = None
+    rerank_score: Optional[float] = None
     snippet: str
 
 
@@ -219,6 +221,9 @@ class GeminiService:
 
         sources: List[CitationSource] = []
         for idx, c in enumerate(unique_contexts, start=1):
+            retrieval_score = round(c.similarity_score, 4)
+            rerank_score = round(c.rerank_score, 4) if c.rerank_score is not None else None
+            effective_rel_score = rerank_score if rerank_score is not None else retrieval_score
             sources.append(
                 CitationSource(
                     citation_id=idx,
@@ -226,8 +231,10 @@ class GeminiService:
                     document_name=c.document_name,
                     page_number=c.page_number,
                     chunk_id=c.chunk_id,
-                    similarity_score=round(c.similarity_score, 4),
-                    relevance_score=round(c.similarity_score, 4),
+                    similarity_score=retrieval_score,
+                    relevance_score=effective_rel_score,
+                    retrieval_score=retrieval_score,
+                    rerank_score=rerank_score,
                     snippet=extract_snippet(c.text),
                 )
             )
