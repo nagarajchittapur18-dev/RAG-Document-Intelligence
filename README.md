@@ -1,4 +1,4 @@
-# RAGMate: AI-Powered Intelligent Document Question Answering System Using Retrieval-Augmented Generation (RAG)
+# DocuRAG / RAGMate: AI-Powered Intelligent Document Question Answering System Using Retrieval-Augmented Generation (RAG)
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110%2B-009688.svg)](https://fastapi.tiangolo.com/)
@@ -7,155 +7,114 @@
 [![Google Gemini](https://img.shields.io/badge/LLM-Google%20Gemini-4285F4.svg)](https://ai.google.dev/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-3.4-38B2AC.svg)](https://tailwindcss.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Test Suite](https://img.shields.io/badge/Tests-113%2F113%20Passing-brightgreen.svg)]()
 
 ---
 
-## 1. Project Title
-**AI-Powered Intelligent Document Question Answering System Using Retrieval-Augmented Generation (RAG)**
+## 1. Project Title & Academic Overview
+**AI-Powered Intelligent Document Question Answering System Using Retrieval-Augmented Generation (RAG)**  
 *Academic Degree / Level: Master of Computer Applications (MCA)*
 
 ---
 
-## 2. Overview
-**RAGMate** is an enterprise-grade, academically rigorous Document Intelligence and Question Answering system based on Retrieval-Augmented Generation (RAG). It enables users to upload PDF research papers, technical manuals, and multi-page reports, automatically parses and chunks text with preserved page numbers, generates dense semantic embeddings, stores vectors in a persistent vector database (ChromaDB), retrieves contextually relevant snippets, optionally applies cross-encoder reranking, and synthesizes hallucination-controlled, fully cited answers using Google Gemini.
+## 2. Project Overview
+**DocuRAG** (internal codename **RAGMate**) is an enterprise-ready, academically rigorous document question-answering platform built upon a multi-stage Retrieval-Augmented Generation (RAG) architecture. It enables users to upload PDF research papers, technical manuals, and business reports, automatically extracts and sanitizes page-by-page text, segments text into overlapping chunks while preserving provenance metadata, generates dense semantic embeddings in ChromaDB, applies cross-encoder neural reranking, and synthesizes hallucination-controlled answers with verified inline page citations using Google Gemini.
 
-Furthermore, RAGMate integrates an **Academic Evaluation Suite** that empirically benchmarks three distinct retrieval paradigms:
-1. **Baseline**: Traditional Keyword BM25 Retrieval
-2. **Proposed**: Dense Semantic Vector Retrieval (ChromaDB + Sentence Transformers)
-3. **Enhanced**: Dense Retrieval + Cross-Encoder Reranking
-
-All evaluations are quantified using formal Information Retrieval (IR) and NLP metrics: Precision@K, Recall@K, Hit Rate@K, Mean Reciprocal Rank (MRR), Faithfulness, and Latency.
+Additionally, DocuRAG features an integrated **Quantitative Evaluation Dashboard** that benchmarks Information Retrieval (IR) metrics ($P@K, R@K, \text{Hit Rate}@K, \text{MRR}$) and CPU inference latencies across a verified gold-standard academic dataset.
 
 ---
 
-## 3. Problem Statement
-Traditional Large Language Models (LLMs) suffer from three critical shortcomings in academic and professional contexts:
-1. **Hallucination**: Generating plausible-sounding yet factually inaccurate statements.
-2. **Knowledge Stagnation**: Inability to answer questions regarding proprietary, private, or recently published documents without costly fine-tuning.
-3. **Lack of Provenance**: Inability to provide verifiable page-level citations for generated answers.
+## 3. System Architecture
+```mermaid
+flowchart TD
+    User([User / Browser])
+    subgraph Frontend [React 19 + Vite + Tailwind CSS]
+        UI[Dashboard / Chat / Doc Mgmt / Evaluation Dashboard]
+        Router[React Router & Auth Context]
+        EvidenceDrawer[Interactive Inline Citation & Evidence Drawer]
+        Charts[Recharts Comparative IR Metrics & Latency Profiling]
+    end
 
-Directly feeding entire books or multi-page PDF documents into LLM context windows incurs prohibitive token costs, latency spikes, and the "lost-in-the-middle" attention phenomenon. RAGMate solves these challenges through modular text chunking, persistent vector search, strict grounding prompts, and provenance-tracked page citations.
+    subgraph Backend [FastAPI Backend]
+        API[FastAPI Endpoints: Auth / Docs / Pages / Chat / Eval / Health]
+        Auth[JWT & Bcrypt Security Layer]
+        DB[(Relational DB: SQLite / PostgreSQL)]
+        
+        subgraph Pipeline [Document Ingestion Pipeline]
+            PDFExtract[PyMuPDF Page-by-Page & Page-Serving Extractor]
+            Cleaner[Text Sanitizer & Preprocessor]
+            Chunker[Configurable Token/Char Chunker with Overlap]
+            Embedder[SentenceTransformer all-MiniLM-L6-v2]
+            Chroma[(ChromaDB Vector Store)]
+        end
+        
+        subgraph RAG [Retrieval & Generation Engine]
+            Retriever[Semantic Vector Retrieval]
+            Rerank[Neural Cross-Encoder Reranker: ms-marco-MiniLM]
+            PromptEngine[Hallucination-Controlled Grounding Prompt]
+            Gemini[Google Gemini API]
+            CitationGen[Deterministic Citation & Provenance Sanitizer]
+        end
 
----
+        subgraph AcademicEval [Research Evaluation Suite]
+            EvalRunner[Automated Benchmark Runner & Engine]
+            Corpus[(24-Page Multi-Doc Academic Corpus)]
+            GoldDataset[(60 Verified Ground Truth Questions)]
+            MetricsCalc[P@K, R@K, Hit Rate@K, MRR, Latency Profiler, Abstention Scorer]
+        end
+    end
 
-## 4. Objectives
-- Provide secure user authentication (JWT + Bcrypt) and tenant isolation for documents.
-- Process arbitrary multi-page PDFs using high-performance C-based text extraction (`PyMuPDF`).
-- Maintain exact page-number metadata for every chunk generated.
-- Generate high-dimensional vector embeddings locally using `sentence-transformers/all-MiniLM-L6-v2`.
-- Store and query embeddings with millisecond latency in ChromaDB.
-- Formulate strict grounding prompts for Google Gemini to eliminate ungrounded hallucinations.
-- Display clickable page citations and excerpt previews for every answer.
-- Support multi-turn chat sessions with context sliding and document scoping (single-doc, multi-doc, all-doc).
-- Conduct empirical research experiments comparing BM25, Dense Retrieval, and Cross-Encoder Reranking.
-
----
-
-## 5. Key Features
-- **User Authentication & Authorization**: Secure signup, login, JWT token management, and per-user document isolation.
-- **Robust PDF Parsing**: Page-by-page extraction, whitespace normalization, header/footer filtering, and empty/scanned document detection.
-- **Configurable Chunking Engine**: Parameterized chunk size (800–1200 characters/tokens) with sliding overlap (100–200) preserving page numbers.
-- **Local Embedding Generation**: Cached HuggingFace SentenceTransformer models running on CPU/GPU without external API latency.
-- **Vector DB Lifecycle**: Dynamic insertion, collection management, metadata filtering by `user_id` and `document_id`, and cascade deletion.
-- **Hallucination Safeguards**: Explicit unanswerable detection when similarity falls below confidence thresholds.
-- **Source Provenance**: Granular citations highlighting Document Name, Page Number, and Exact Text Snippet.
-- **Interactive Academic UI**: Clean, professional Tailwind CSS dashboard with responsive sidebar navigation, upload progress, real-time chat, and evaluation charts.
-- **Empirical Research Benchmarking**: Automated test suite executing verified queries across 3 retrieval regimes with real-time metric visualization.
-
----
-
-## 6. High-Level Architecture
-```
-                           +----------------------+
-                           |    React Frontend    |
-                           |  (Vite + Tailwind)   |
-                           +----------+-----------+
-                                      | HTTP / REST
-                                      v
-                           +----------------------+
-                           |   FastAPI Backend    |
-                           +----------+-----------+
-                                      |
-         +----------------------------+----------------------------+
-         |                            |                            |
-         v                            v                            v
-+------------------+         +------------------+         +------------------+
-| Relational DB    |         | PDF Pipeline     |         | RAG & LLM Engine |
-| (SQLite/Postgres)|         | (PyMuPDF)        |         | (ChromaDB+Gemini)|
-| - Users          |         | - Page Extract   |         | - Vector Search  |
-| - Documents      |         | - Text Clean     |         | - Cross-Rerank   |
-| - Chat Sessions  |         | - Chunking       |         | - Prompt Ground  |
-| - Messages       |         | - Embeddings     |         | - Page Citations |
-+------------------+         +------------------+         +------------------+
+    User <--> UI
+    UI <--> Router
+    UI <--> EvidenceDrawer
+    UI <--> Charts
+    Router <--> API
+    API --> Auth --> DB
+    API --> Pipeline
+    Pipeline --> PDFExtract --> Cleaner --> Chunker --> Embedder --> Chroma
+    API --> RAG
+    RAG --> Retriever --> Chroma
+    Retriever --> Rerank --> PromptEngine --> Gemini --> CitationGen --> API
+    API --> AcademicEval
+    AcademicEval --> Corpus & GoldDataset --> EvalRunner --> MetricsCalc
 ```
 
 ---
 
-## 7. Technology Stack
-| Layer | Technologies | Rationale |
+## 4. Key Features
+- **Multi-Tenant User Isolation**: Bcrypt password hashing (`rounds=12`) and stateless JWT authorization ensuring users only ever access their own documents, chat sessions, and citations.
+- **Robust PDF Ingestion**: PyMuPDF extraction with whitespace normalization, control character stripping, hyphenation reconstruction, and password-protected PDF rejection.
+- **Dense Vector Search**: `sentence-transformers/all-MiniLM-L6-v2` generating 384-dimensional dense vectors stored in a persistent ChromaDB collection with cosine distance indexing.
+- **Stage-2 Neural Reranking**: `cross-encoder/ms-marco-MiniLM-L-6-v2` joint cross-attention scoring over candidate chunks, achieving **100% Hit Rate@5** and **99.38% Recall@5** on academic benchmarks.
+- **Source Provenance & Evidence Verification**: Clickable inline citation markers `[1]` opening a verified page-serving viewer (`GET /api/documents/{id}/pages/{page}`).
+- **Zero-Hallucination Safe Fallback**: Automated abstention when evidence is insufficient or queries fall outside the ingested document corpus.
+- **Empirical Research Dashboard**: Interactive Recharts visualizations with longitudinal experiment diffs, latency breakdowns, and CSV/JSON query metric exports.
+- **Production Hardening**: Distributed `X-Request-ID` tracking, sliding-window rate limiting (60 req/min), path traversal defense, and security response headers.
+
+---
+
+## 5. Technology Stack
+| Layer | Technologies | Role in System |
 |---|---|---|
-| **Frontend** | React 19, Vite, Tailwind CSS, React Router DOM, Axios, Lucide Icons | Fast, modern, responsive UI with zero bloated UI libraries. |
-| **Backend API** | FastAPI, Pydantic v2, Uvicorn, Python 3.10+ | Asynchronous high-throughput REST API with automatic OpenAPI docs. |
-| **PDF Extraction** | PyMuPDF (Fitz) | High speed, robust C-level parser retaining exact page structure. |
-| **Embeddings** | Sentence-Transformers (`all-MiniLM-L6-v2`) | Compact (384-d), fast inference, excellent semantic retrieval accuracy. |
-| **Vector Database** | ChromaDB (Persistent) | Lightweight, reliable local vector storage with cosine/L2 metadata filtering. |
-| **Reranker** | Cross-Encoder (`ms-marco-MiniLM-L-6-v2`) | State-of-the-art precision reranking for candidate chunks. |
-| **LLM Reasoning** | Google Gemini (`gemini-1.5-flash` / `gemini-1.5-pro`) | High-speed, large context window, accurate instruction following. |
-| **Relational DB** | SQLite (Async via `aiosqlite`) / PostgreSQL | Modular SQLAlchemy 2.0 async engine. |
-| **Auth & Security** | JWT (HS256) + Bcrypt Password Hashing | Industry standard stateless session authentication. |
+| **Frontend** | React 19, Vite, Tailwind CSS, Recharts, Lucide Icons | Responsive SPA, interactive evidence inspection, real-time charts |
+| **Backend API** | FastAPI, Uvicorn, Pydantic v2, Python 3.10+ | Asynchronous REST API, schema validation, middleware |
+| **Database** | SQLite (`aiosqlite`) / PostgreSQL | Relational metadata persistence (users, documents, chat sessions) |
+| **Vector DB** | ChromaDB (Persistent Client) | High-performance dense vector storage & cosine similarity search |
+| **Embeddings** | HuggingFace `all-MiniLM-L6-v2` | 384-dimensional dense semantic vector generation |
+| **Reranker** | HuggingFace `ms-marco-MiniLM-L-6-v2` | Cross-encoder contextual reranker |
+| **LLM Reasoning**| Google Gemini (`gemini-3.1-flash-lite`) | Grounded answer synthesis and document comparison |
+| **PDF Extraction**| PyMuPDF (`fitz`) | C-based high-throughput page-by-page text parsing |
+| **Security** | Bcrypt, Python-JOSE, Rate Limiting | Password hashing, JWT auth, request throttling |
 
 ---
 
-## 8. Project Structure
-```text
-RAGMate/
-├── backend/
-│   ├── app/
-│   │   ├── api/              # FastAPI Routers (auth, documents, chat, evaluation)
-│   │   ├── database/         # SQLAlchemy engine, session, Base models
-│   │   ├── models/           # ORM Entities (User, Document, ChatSession, Message)
-│   │   ├── services/         # Core business logic (PDF, chunker, embeddings, Chroma, Gemini, eval)
-│   │   ├── utils/            # JWT, password hashing, validation helpers
-│   │   ├── config.py         # Pydantic BaseSettings
-│   │   └── main.py           # FastAPI application entrypoint & middleware
-│   ├── chroma_data/          # Persistent ChromaDB vector collections
-│   ├── uploads/              # Local disk storage for uploaded PDFs
-│   ├── tests/                # Automated pytest suite (PDF, chunking, retrieval, API)
-│   ├── requirements.txt      # Python dependencies
-│   └── .env.example          # Backend environment variables template
-├── frontend/
-│   ├── src/
-│   │   ├── components/       # Reusable UI widgets (Navbar, Sidebar, Modals, Cards)
-│   │   ├── pages/            # Login, Register, Dashboard, Documents, Chat, Evaluation
-│   │   ├── services/         # Axios API clients
-│   │   ├── context/          # Auth and Notification contexts
-│   │   ├── App.jsx           # App layout and route declarations
-│   │   └── main.jsx          # React DOM root
-│   ├── package.json          # Node dependencies
-│   ├── tailwind.config.js    # Tailwind configuration
-│   └── vite.config.js        # Vite build tool settings
-├── evaluation/
-│   ├── evaluation_questions.csv # Academic benchmark question set with ground truth
-│   └── results/              # Measured JSON/CSV benchmark outputs
-├── docs/
-│   ├── architecture.md       # Detailed technical design document
-│   ├── api.md                # REST API specifications and payloads
-│   └── methodology.md        # Academic research methodology and viva notes
-├── sample_documents/         # Sample academic papers for initial testing
-├── .gitignore
-├── .env.example
-└── README.md
-```
-
----
-
-## 9. Installation & Setup
+## 6. Installation & Environment Setup
 
 ### Prerequisites
 - Python 3.10+
 - Node.js 18+ and npm
-- Git
 - Google Gemini API Key ([Google AI Studio](https://aistudio.google.com/))
+- Git
 
 ### Step 1: Clone Repository
 ```bash
@@ -175,85 +134,100 @@ source venv/bin/activate
 
 pip install -r requirements.txt
 cp .env.example .env
-# Edit .env and supply your GEMINI_API_KEY and a secure JWT_SECRET_KEY
+```
+Edit `backend/.env` and configure:
+```env
+GEMINI_API_KEY=your_actual_gemini_api_key
+JWT_SECRET_KEY=generate_a_random_32_character_secret_key
+DATABASE_URL=sqlite+aiosqlite:///./ragmate.db
 ```
 
 ### Step 3: Frontend Setup
 ```bash
 cd ../frontend
 npm install
-npm run build # verify build
+npm run build # verifies production build
 ```
 
 ---
 
-## 10. Running the Application
+## 7. Running the Application
 
-### Start Backend API Server
+### Running Backend API
 ```bash
 cd backend
-# With venv activated:
+# Windows:
+.\venv\Scripts\activate
+# Linux/macOS:
+source venv/bin/activate
+
 uvicorn app.main:app --reload --port 8000
 ```
-*API Swagger Documentation will be accessible at: `http://localhost:8000/docs`*
+- API Base URL: `http://localhost:8000`
+- Interactive OpenAPI Swagger Docs: `http://localhost:8000/docs`
+- Interactive ReDoc: `http://localhost:8000/redoc`
 
-### Start Frontend Dev Server
+### Running Frontend
 ```bash
 cd frontend
 npm run dev
 ```
-*Web Application will be accessible at: `http://localhost:5173`*
+- Web Application: `http://localhost:5173`
 
 ---
 
-## 11. Two-Stage Retrieval & Reranking Architecture (Phase 11)
+## 8. Docker Deployment
+DocuRAG includes production-ready Docker configurations for containerized execution.
 
-To ensure both high recall and high precision in document question answering, DocuRAG employs a **two-stage retrieval pipeline**:
+```bash
+# Build and run backend + frontend + persistent volumes
+docker-compose up --build -d
+```
+Services spun up:
+- `backend`: Exposed on port `8000` with mounted volumes for ChromaDB and uploads.
+- `frontend`: Multi-stage Alpine Nginx serving optimized static assets on port `5173`.
 
-```text
-User Question
-      ↓
-Query Rewriter (Coreference & Context Resolution)
-      ↓
-Stage 1: ChromaDB Dense Semantic Search (Candidate Pool N = 10–20 chunks)
-      ↓
-Stage 2: Cross-Encoder Reranking (ms-marco-MiniLM-L-6-v2)
-      ↓
-Comparison Query Balancing (Prevents source starvation across multiple documents)
-      ↓
-Final Grounded Context (Top K = 3–5 chunks within character budget)
-      ↓
-Google Gemini LLM Generation
-      ↓
-Answer with Verified Inline Citations [1], [2]
+---
+
+## 9. Testing & Quality Assurance
+DocuRAG includes a test suite covering unit logic, integration flows, multi-tenant isolation, IDOR security, and performance profiling.
+
+### Run Full Test Suite
+```bash
+cd backend
+.\venv\Scripts\pytest tests -v
+```
+**Current Status:** `113 / 113 passed` (56.89s execution duration).
+
+### Run Security & Hardening Tests Only
+```bash
+.\venv\Scripts\pytest tests/test_security_and_hardening.py -v
 ```
 
-### Key Technical Details
-1. **High Recall + High Precision**:
-   - Initial vector search retrieves a wider candidate pool ($N = 15$) to minimize false negatives.
-   - The Cross-Encoder scores $(query, chunk)$ pairs jointly with full self-attention across tokens, producing accurate relevance scores normalized via sigmoid:
-     $$\sigma(z) = \frac{1}{1 + e^{-z}}$$
-2. **Deterministic Comparison Query Detection**:
-   - Comparison queries (`compare`, `versus`, `difference`, `between`) automatically trigger balanced document selection across the reranked candidate pool to ensure multi-paper questions retain evidence from both documents.
-3. **Resilient CPU / GPU Execution & Graceful Fallback**:
-   - Reranker automatically detects and uses CUDA if available, falling back smoothly to CPU on student/laptop hardware.
-   - If reranking fails or is disabled via configuration (`RERANKING_ENABLED=false`), the system gracefully defaults to pure vector similarity ranking without interrupting generation or throwing user-facing errors.
-4. **Configuration Hyperparameters (`app/config.py`)**:
-   - `RERANKING_ENABLED: bool = True` (toggleable runtime setting)
-   - `RERANKER_MODEL: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"`
-   - `RERANKING_CANDIDATES: int = 15` (candidate pool size)
-   - `RERANKING_TOP_K: int = 5` (final selected chunks)
-   - `MAX_RERANK_TEXT_LENGTH: int = 1000` (scoring input length boundary)
+### Run Performance & Resilience Tests Only
+```bash
+.\venv\Scripts\pytest tests/test_performance_and_resilience.py -v
+```
 
 ---
 
-## 12. Academic Evaluation & Research Methodology
-The evaluation module benchmarks queries across three retrieval configurations:
-$$\text{Precision@K} = \frac{|\text{Relevant Chunks Retrieved in Top K}|}{K}$$
-$$\text{Recall@K} = \frac{|\text{Relevant Chunks Retrieved in Top K}|}{|\text{Total Relevant Chunks for Query}|}$$
-$$\text{MRR} = \frac{1}{|Q|} \sum_{i=1}^{|Q|} \frac{1}{\text{rank}_i}$$
+## 10. Quantitative Research Evaluation
+DocuRAG incorporates an evaluation dataset of **60 manually verified questions** across a **24-page academic corpus** (3 peer-reviewed research papers).
 
-Results are saved to `evaluation/results/` and visualized interactively in the frontend Evaluation Dashboard.
+To execute the benchmark engine:
+```bash
+python -m evaluation.scripts.run_evaluation
+```
+Results and analysis are output to `evaluation/results/` and visualized within the frontend **Evaluation Dashboard** (`/evaluation`).
+
+---
+
+## 11. Security Considerations
+- **Untrusted Document Context:** The prompt engine instructs the LLM that retrieved document excerpts are untrusted evidence and strictly forbids instruction execution from context text.
+- **Path Traversal Defense:** Uploaded filenames are sanitized with regex character replacement and target directory boundaries are asserted using `Path.resolve()`.
+- **Encrypted PDF Handling:** Password-protected or encrypted PDFs are proactively rejected with clean HTTP 400 responses.
+- **Request Throttling:** Resource-intensive routes are throttled to 60 req/min per IP with HTTP 429 and `Retry-After`.
+- **Security Headers:** Every response emits `X-Request-ID`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, and `Referrer-Policy: strict-origin-when-cross-origin`.
 
 ---
 

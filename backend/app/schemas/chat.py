@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 
 
 class AskQuestionRequest(BaseModel):
-    question: str = Field(..., min_length=1, description="Natural language question to ask")
+    question: str = Field(..., min_length=1, max_length=3000, description="Natural language question to ask (max 3000 chars)")
     document_ids: Optional[List[str]] = Field(
         default=None,
         description="Optional list of document IDs to scope retrieval to. If omitted or empty, queries all documents.",
@@ -21,7 +21,7 @@ class AskQuestionRequest(BaseModel):
 
 
 class SessionMessageRequest(BaseModel):
-    question: str = Field(..., min_length=1, description="Question to submit to the active chat session")
+    question: str = Field(..., min_length=1, max_length=3000, description="Question to submit to the active chat session (max 3000 chars)")
     top_k: Optional[int] = Field(
         default=None,
         ge=1,
@@ -58,7 +58,7 @@ class AskQuestionResponse(BaseModel):
 
 
 class CreateSessionRequest(BaseModel):
-    title: Optional[str] = Field("New Conversation", description="Title for the chat session")
+    title: Optional[str] = Field("New Conversation", max_length=150, description="Title for the chat session")
     document_ids: Optional[List[str]] = Field(
         default=None,
         description="Optional list of document IDs to bind to this session",

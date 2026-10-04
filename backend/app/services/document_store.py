@@ -161,7 +161,9 @@ class DatabaseManager:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_sessions_user ON chat_sessions(user_id, updated_at DESC)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at ASC)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_session_docs ON chat_session_documents(session_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_session_docs_doc ON chat_session_documents(document_id)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_documents_user ON documents(user_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_documents_created ON documents(created_at DESC)")
             conn.commit()
 
     # =========================================================================

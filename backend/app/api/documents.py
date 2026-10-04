@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import shutil
 import uuid
 from pathlib import Path
@@ -54,8 +55,11 @@ async def upload_document(
             detail="No file provided in upload request.",
         )
 
-    filename = file.filename
-    clean_filename = Path(filename).name
+    raw_filename = file.filename or "uploaded.pdf"
+    # 1. Strip path components and dangerous characters
+    base_name = Path(raw_filename).name
+    clean_filename = re.sub(r'[^\w\s\.-]', '_', base_name)
+    clean_filename = re.sub(r'\.{2,}', '.', clean_filename).strip()
 
     # Validate file extension
     if not clean_filename.lower().endswith(".pdf"):
@@ -63,6 +67,9 @@ async def upload_document(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Only PDF files are supported.",
         )
+
+    if clean_filename.lower() == ".pdf" or not clean_filename:
+        clean_filename = "document.pdf"
 
     # Validate Content-Type header if provided
     if file.content_type and "pdf" not in file.content_type.lower() and file.content_type != "application/octet-stream":
@@ -74,10 +81,17 @@ async def upload_document(
     # Generate unique document ID
     doc_id = uuid.uuid4().hex[:12]
 
-    # Prepare storage directory
-    upload_dir = Path(settings.UPLOAD_DIRECTORY)
+    # Prepare storage directory and verify path safety
+    upload_dir = Path(settings.UPLOAD_DIRECTORY).resolve()
     upload_dir.mkdir(parents=True, exist_ok=True)
-    saved_path = upload_dir / f"{doc_id}_{clean_filename}"
+    saved_path = (upload_dir / f"{doc_id}_{clean_filename}").resolve()
+
+    # Path traversal protection
+    if not str(saved_path).startswith(str(upload_dir)):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid file path or path traversal detected.",
+        )
 
     # Read content and enforce file size constraints
     try:

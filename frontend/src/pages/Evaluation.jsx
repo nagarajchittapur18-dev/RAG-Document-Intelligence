@@ -1,11 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import {
-  BarChart3,
   RefreshCw,
-  Download,
   Play,
   ArrowRightLeft,
-  Database,
   Layers,
   Sparkles,
   BookOpen,
@@ -14,7 +11,6 @@ import {
   FileSpreadsheet,
   FileCode,
   AlertCircle,
-  HelpCircle,
 } from 'lucide-react';
 import api from '../services/api';
 import { useApp } from '../context/AppContext';

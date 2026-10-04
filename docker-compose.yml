@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: docurag_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.1-flash-lite}
+      - DATABASE_URL=${DATABASE_URL:-sqlite+aiosqlite:///./ragmate.db}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-ragmate_academic_mca_super_secret_jwt_key_2026_x89q2_production_ready}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5173,http://localhost:80,http://127.0.0.1:5173}
+      - CHROMA_PERSIST_DIRECTORY=/app/chroma_data
+      - UPLOAD_DIRECTORY=/app/uploads
+      - RERANKER_ENABLED=true
+    volumes:
+      - chroma_data:/app/chroma_data
+      - uploads_data:/app/uploads
+      - sqlite_data:/app/db
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: docurag_frontend
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+volumes:
+  chroma_data:
+  uploads_data:
+  sqlite_data:

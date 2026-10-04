@@ -134,6 +134,12 @@ class PDFProcessor:
             raise CorruptPDFError(f"Failed to parse PDF with PyMuPDF: {str(e)}")
 
         try:
+            if doc.is_encrypted:
+                raise CorruptPDFError(
+                    f"Document '{doc_filename}' is password-protected or encrypted. "
+                    "Encrypted PDFs are not supported."
+                )
+
             page_count = len(doc)
             if page_count == 0:
                 raise EmptyPDFError(f"Document '{doc_filename}' has 0 pages.")
@@ -206,6 +212,9 @@ class PDFProcessor:
             raise CorruptPDFError(f"Failed to parse PDF with PyMuPDF: {str(e)}")
 
         try:
+            if doc.is_encrypted:
+                raise CorruptPDFError("Document is password-protected or encrypted.")
+
             page_count = len(doc)
             if page_number < 1 or page_number > page_count:
                 raise IndexError(f"Page number {page_number} is out of range (1 to {page_count}).")
