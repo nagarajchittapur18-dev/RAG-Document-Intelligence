@@ -12,6 +12,7 @@ from app.schemas.document import (
     DocumentDetailResponse,
     DocumentItem,
     DocumentListResponse,
+    DocumentPageResponse,
     DocumentUploadResponse,
 )
 from app.services.chunker import DocumentChunker
@@ -209,6 +210,59 @@ async def get_document(
         file_path=doc.file_path,
         created_at=doc.created_at,
     )
+
+
+@router.get(
+    "/{document_id}/pages/{page_number}",
+    response_model=DocumentPageResponse,
+    summary="Get extracted text for a specific document page",
+    description="Retrieves the verified, cleaned text content of a single page from a user-owned document for citation verification.",
+)
+async def get_document_page(
+    document_id: str,
+    page_number: int,
+    current_user: UserRecord = Depends(get_current_user),
+):
+    doc = document_store.get_document(document_id)
+    if not doc or doc.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found.",
+        )
+
+    if page_number < 1 or (doc.pages > 0 and page_number > doc.pages):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Page number {page_number} is out of range. Document has {doc.pages} pages.",
+        )
+
+    file_path = Path(doc.file_path)
+    if not file_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Underlying document file not found on disk.",
+        )
+
+    try:
+        page_data = pdf_processor.extract_page(str(file_path), page_number)
+        return DocumentPageResponse(
+            document_id=doc.id,
+            document_name=doc.filename,
+            page_number=page_data.page_number,
+            total_pages=doc.pages,
+            text=page_data.text,
+        )
+    except IndexError as ie:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(ie),
+        )
+    except Exception as e:
+        logger.error("Failed to extract page %d from document %s: %s", page_number, document_id, e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to read page content: {str(e)}",
+        )
 
 
 @router.delete(

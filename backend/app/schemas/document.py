@@ -37,3 +37,11 @@ class DocumentDetailResponse(BaseModel):
 
 class DocumentDeleteResponse(BaseModel):
     message: str
+
+
+class DocumentPageResponse(BaseModel):
+    document_id: str = Field(..., description="Document ID")
+    document_name: str = Field(..., description="Document original filename")
+    page_number: int = Field(..., description="1-indexed page number")
+    total_pages: int = Field(..., description="Total pages in document")
+    text: str = Field(..., description="Clean extracted text for the specified page")

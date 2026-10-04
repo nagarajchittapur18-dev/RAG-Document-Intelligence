@@ -1,6 +1,7 @@
 import logging
+import re
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 from pydantic import BaseModel, Field
 
 from app.config import settings
@@ -15,24 +16,95 @@ SAFE_FALLBACK_ANSWER = (
 SYSTEM_PROMPT_TEMPLATE = """You are DocuRAG, an intelligent document question answering assistant.
 Your task is to answer the user's question using exclusively the provided document context excerpts.
 
-Strict Grounding Guidelines:
+Strict Grounding & Citation Guidelines:
 1. Use ONLY information directly supported by the retrieved context snippets.
 2. Do NOT extrapolate, speculate, or invent facts not stated in the context.
-3. The context may contain information from one or multiple documents. Keep information from different documents clearly distinguished.
-4. When comparing documents (methodologies, datasets, results, algorithms, objectives), explicitly identify which document supports each claim and format the response with structured sections (e.g. per-document findings and key differences).
-5. When formulating the answer, reference the source document names and page numbers where applicable.
-6. If the retrieved context does not contain enough information to formulate an accurate answer, state exactly:
+3. Every factual statement or claim in your answer MUST be cited using the corresponding source number in square brackets, e.g., [1], [2], or [1, 2].
+4. ONLY cite citation numbers that exist in the provided sources (e.g. if sources [1] to [4] are provided, do not cite [5] or any other number).
+5. The context may contain information from one or multiple documents. Keep information from different documents clearly distinguished.
+6. When comparing documents (methodologies, datasets, results, algorithms, objectives), explicitly identify which document supports each claim and format the response with structured sections (e.g. per-document findings and key differences).
+7. When formulating the answer, reference the source document names and page numbers where applicable.
+8. If the retrieved context does not contain enough information to formulate an accurate answer, state exactly:
    "I could not find sufficient information in the selected documents to answer this question."
-7. Maintain a professional, concise, academic tone.
+9. Maintain a professional, concise, academic tone.
 """
 
 
+def extract_snippet(text: str, target_len: int = 350, max_len: int = 500) -> str:
+    """
+    Extracts a representative snippet (300-500 chars) from a retrieved chunk,
+    preserving sentence boundaries where feasible.
+    """
+    clean = text.strip()
+    if len(clean) <= max_len:
+        return clean
+
+    # Look for sentence boundary between 200 and max_len chars
+    candidate = clean[:max_len]
+    sentence_ends = [m.end() for m in re.finditer(r'[.!?](?:\s+|$)', candidate)]
+    good_ends = [idx for idx in sentence_ends if idx >= 200]
+    if good_ends:
+        best_end = good_ends[-1]
+        return clean[:best_end].strip()
+
+    # Fallback: break on last whitespace before target_len or max_len
+    space_idx = candidate.rfind(' ', 200, max_len)
+    if space_idx != -1:
+        return clean[:space_idx].strip() + "..."
+
+    return clean[:target_len].strip() + "..."
+
+
+def sanitize_citations(answer: str, valid_citation_ids: Set[int]) -> str:
+    """
+    Validates and sanitizes LLM-generated inline citation references.
+    Removes or prunes references to non-existent citation IDs (hallucinated sources).
+    Normalizes valid citations to standard [N] or [N, M] format.
+    """
+    if not answer:
+        return ""
+
+    if not valid_citation_ids:
+        # If no valid sources exist, strip any hallucinated bracketed citations
+        cleaned = re.sub(
+            r'\[(?:\s*(?:Source|Citation)\s*:?\s*)?(\d+(?:\s*,\s*(?:Source\s*:?\s*)?\d+)*)\]',
+            '',
+            answer,
+            flags=re.IGNORECASE,
+        )
+        cleaned = re.sub(r'[ \t]+([.,;?!])', r'\1', cleaned)
+        return re.sub(r'[ \t]{2,}', ' ', cleaned).strip()
+
+    def replace_citation(match: re.Match) -> str:
+        content = match.group(1)
+        nums = [int(n.strip()) for n in re.findall(r'\b\d+\b', content)]
+        valid_nums = [n for n in nums if n in valid_citation_ids]
+        seen = set()
+        deduped = []
+        for n in valid_nums:
+            if n not in seen:
+                seen.add(n)
+                deduped.append(n)
+
+        if not deduped:
+            return ""
+        return "[" + ", ".join(str(n) for n in deduped) + "]"
+
+    pattern = r'\[(?:\s*(?:Source|Citation)\s*:?\s*)?(\d+(?:\s*,\s*(?:Source\s*:?\s*)?\d+)*)\]'
+    cleaned = re.sub(pattern, replace_citation, answer, flags=re.IGNORECASE)
+    cleaned = re.sub(r'[ \t]+([.,;?!])', r'\1', cleaned)
+    cleaned = re.sub(r'[ \t]{2,}', ' ', cleaned)
+    return cleaned.strip()
+
+
 class CitationSource(BaseModel):
+    citation_id: int = 1
     document_id: str
     document_name: str
     page_number: int
     chunk_id: str
     similarity_score: float
+    relevance_score: float = 0.0
     snippet: str
 
 
@@ -97,19 +169,28 @@ class GeminiService:
         if not contexts:
             return "No relevant document excerpts were retrieved."
 
-        # Group by document for clear provenance boundaries
-        doc_grouped: Dict[str, List[SearchResult]] = {}
-        for ctx in contexts:
+        # Deduplicate contexts preserving order
+        unique_contexts: List[SearchResult] = []
+        seen_keys = set()
+        for c in contexts:
+            s_key = (str(c.document_id), str(c.chunk_id))
+            if s_key not in seen_keys:
+                seen_keys.add(s_key)
+                unique_contexts.append(c)
+
+        # Group by document for clear provenance boundaries while maintaining 1-indexed citation IDs
+        doc_grouped: Dict[str, List[tuple[int, SearchResult]]] = {}
+        for idx, ctx in enumerate(unique_contexts, start=1):
             doc_key = f"{ctx.document_name} (ID: {ctx.document_id})"
-            doc_grouped.setdefault(doc_key, []).append(ctx)
+            doc_grouped.setdefault(doc_key, []).append((idx, ctx))
 
         doc_sections: List[str] = []
-        source_idx = 1
-        for doc_header, chunks in doc_grouped.items():
+        for doc_header, indexed_chunks in doc_grouped.items():
             lines = [f"=== DOCUMENT: {doc_header} ==="]
-            for c in chunks:
-                lines.append(f"\n[Source {source_idx}: {c.document_name} | Page {c.page_number} | Chunk {c.chunk_id}]\n{c.text.strip()}")
-                source_idx += 1
+            for source_idx, c in indexed_chunks:
+                lines.append(
+                    f"\n[Source {source_idx}: {c.document_name} | Page {c.page_number} | Chunk {c.chunk_id}]\n{c.text.strip()}"
+                )
             doc_sections.append("\n".join(lines))
 
         return "\n\n" + ("\n\n" + "-" * 40 + "\n\n").join(doc_sections)
@@ -127,23 +208,29 @@ class GeminiService:
         t_start = time.perf_counter()
         clean_question = question.strip()
 
-        # Build deduplicated citation objects from retrieved contexts
+        # Build deduplicated citation objects from retrieved contexts preserving order
+        unique_contexts: List[SearchResult] = []
         seen_sources = set()
-        sources: List[CitationSource] = []
         for c in contexts:
             s_key = (str(c.document_id), str(c.chunk_id))
             if s_key not in seen_sources:
                 seen_sources.add(s_key)
-                sources.append(
-                    CitationSource(
-                        document_id=c.document_id,
-                        document_name=c.document_name,
-                        page_number=c.page_number,
-                        chunk_id=c.chunk_id,
-                        similarity_score=c.similarity_score,
-                        snippet=c.text[:200].strip() + ("..." if len(c.text) > 200 else ""),
-                    )
+                unique_contexts.append(c)
+
+        sources: List[CitationSource] = []
+        for idx, c in enumerate(unique_contexts, start=1):
+            sources.append(
+                CitationSource(
+                    citation_id=idx,
+                    document_id=c.document_id,
+                    document_name=c.document_name,
+                    page_number=c.page_number,
+                    chunk_id=c.chunk_id,
+                    similarity_score=round(c.similarity_score, 4),
+                    relevance_score=round(c.similarity_score, 4),
+                    snippet=extract_snippet(c.text),
                 )
+            )
 
         # Hallucination Guard: If no contexts retrieved, return safe fallback immediately
         if not contexts:
@@ -195,7 +282,9 @@ class GeminiService:
             f"1. Use conversation history ONLY to resolve references such as 'it', 'they', 'this method', 'the first paper', or 'that dataset'.\n"
             f"2. Use retrieved document context as the ONLY authoritative, factual source for answering.\n"
             f"3. Do NOT invent information that is not directly supported by the retrieved context.\n"
-            f"4. If the retrieved context does not contain enough information to formulate an accurate answer, state exactly:\n"
+            f"4. Cite every factual assertion using square bracket source citations (e.g. [1], [2]) corresponding to the [Source N] numbers above.\n"
+            f"5. Do NOT cite non-existent source numbers or make speculative claims.\n"
+            f"6. If the retrieved context does not contain enough information to formulate an accurate answer, state exactly:\n"
             f"   \"{SAFE_FALLBACK_ANSWER}\""
         )
 
@@ -209,6 +298,13 @@ class GeminiService:
                 and "not find sufficient information in the" not in clean_answer.lower()
                 and "could not find sufficient information" not in clean_answer.lower()
             )
+
+            # Sanitize citations against valid citation IDs
+            if is_grounded:
+                valid_ids = {s.citation_id for s in sources}
+                clean_answer = sanitize_citations(clean_answer, valid_ids)
+            else:
+                clean_answer = sanitize_citations(clean_answer, set())
 
             elapsed_ms = (time.perf_counter() - t_start) * 1000
             logger.info(

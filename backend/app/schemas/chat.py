@@ -35,12 +35,14 @@ class RenameSessionRequest(BaseModel):
 
 
 class SourceCitation(BaseModel):
+    citation_id: int = Field(..., description="1-indexed sequential citation identifier [1], [2], ...")
     document_id: str = Field(..., description="Document ID")
     document_name: str = Field(..., description="Original filename")
     page_number: int = Field(..., description="1-indexed source page")
     chunk_id: str = Field(..., description="Deterministic chunk ID")
     similarity_score: Optional[float] = Field(None, description="Cosine similarity score")
-    snippet: Optional[str] = Field(None, description="Excerpt preview")
+    relevance_score: Optional[float] = Field(None, description="Normalized relevance score (0.00 - 1.00)")
+    snippet: Optional[str] = Field(None, description="Excerpt preview (300-500 chars)")
 
 
 class AskQuestionResponse(BaseModel):

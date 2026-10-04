@@ -156,11 +156,13 @@ async def _process_chat_query(
                 seen_citations.add(cit_key)
                 citation_sources.append(
                     SourceCitation(
+                        citation_id=getattr(s, "citation_id", len(citation_sources) + 1),
                         document_id=s.document_id,
                         document_name=s.document_name,
                         page_number=s.page_number,
                         chunk_id=s.chunk_id,
                         similarity_score=s.similarity_score,
+                        relevance_score=getattr(s, "relevance_score", s.similarity_score),
                         snippet=s.snippet,
                     )
                 )

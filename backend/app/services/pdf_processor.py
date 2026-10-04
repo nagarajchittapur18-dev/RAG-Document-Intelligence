@@ -191,3 +191,38 @@ class PDFProcessor:
 
         finally:
             doc.close()
+
+    def extract_page(self, file_path: str, page_number: int) -> ExtractedPage:
+        """
+        Extracts and cleans text from a specific 1-indexed page of a PDF document.
+        Raises IndexError if page_number is out of range.
+        """
+        path = self.validate_file(file_path)
+
+        try:
+            doc = pymupdf.open(str(path))
+        except Exception as e:
+            logger.error("Failed to open PDF %s: %s", path.name, str(e))
+            raise CorruptPDFError(f"Failed to parse PDF with PyMuPDF: {str(e)}")
+
+        try:
+            page_count = len(doc)
+            if page_number < 1 or page_number > page_count:
+                raise IndexError(f"Page number {page_number} is out of range (1 to {page_count}).")
+
+            page = doc[page_number - 1]
+            raw_text = page.get_text("text") or ""
+            cleaned = self.clean_text(raw_text)
+
+            words = cleaned.split()
+            char_count = len(cleaned)
+            word_count = len(words)
+
+            return ExtractedPage(
+                page_number=page_number,
+                text=cleaned,
+                char_count=char_count,
+                word_count=word_count,
+            )
+        finally:
+            doc.close()

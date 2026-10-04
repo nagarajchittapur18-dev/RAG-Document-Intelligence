@@ -104,6 +104,14 @@ export const api = {
   },
 
   /**
+   * Retrieve clean extracted text for a specific page of a document
+   */
+  async getDocumentPage(documentId, pageNumber) {
+    const res = await apiClient.get(`/documents/${documentId}/pages/${pageNumber}`);
+    return res.data;
+  },
+
+  /**
    * Upload and process a PDF document
    */
   async uploadDocument(file, onUploadProgress) {
