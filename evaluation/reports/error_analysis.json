@@ -1,0 +1,13 @@
+{
+  "experiment_id": "EXP_20261004_065505_60",
+  "timestamp": "2026-10-04T06:55:05.024389+00:00",
+  "error_counts": {
+    "success": 54,
+    "reranking_failure": 0,
+    "retrieval_failure": 0,
+    "page_mismatch": 0,
+    "unanswerable_abstention_success": 6,
+    "abstention_failure": 0
+  },
+  "detailed_failures": []
+}

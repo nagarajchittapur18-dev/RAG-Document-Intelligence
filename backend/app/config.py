@@ -19,7 +19,9 @@ class Settings(BaseSettings):
     JWT_EXPIRATION_MINUTES: int = 1440
 
     # Vector Store & Embedding Settings
-    CHROMA_PERSIST_DIRECTORY: str = "./chroma_data"
+    CHROMA_PERSIST_DIRECTORY: str = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "chroma_data")
+    )
     EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
 
     # RAG & Ingestion Hyperparameters
