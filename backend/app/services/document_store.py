@@ -1,11 +1,16 @@
 import json
 import logging
+import os
+import re
 import sqlite3
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
+
+from app.config import settings
 
 logger = logging.getLogger("ragmate.database")
 
@@ -48,27 +53,200 @@ class ChatMessageRecord(BaseModel):
     created_at: str
 
 
+class PGCursorWrapper:
+    """Wrapper for SQLAlchemy query result mimicking SQLite cursor access."""
+
+    def __init__(self, result):
+        self.result = result
+        self.rowcount = getattr(result, "rowcount", 0)
+
+    def fetchone(self):
+        row = self.result.fetchone()
+        return dict(row._mapping) if row else None
+
+    def fetchall(self):
+        rows = self.result.fetchall()
+        return [dict(r._mapping) for r in rows]
+
+
+class PGConnectionWrapper:
+    """Wrapper for SQLAlchemy connection translating SQLite syntax to PostgreSQL."""
+
+    def __init__(self, sa_conn):
+        self.sa_conn = sa_conn
+
+    def execute(self, query: str, params: tuple = ()):
+        from sqlalchemy import text
+        q = query
+        # Dialect translation for upsert / conflict handling
+        if "INSERT OR REPLACE INTO documents" in q:
+            q = q.replace("INSERT OR REPLACE INTO documents", "INSERT INTO documents") + (
+                " ON CONFLICT (id) DO UPDATE SET "
+                "user_id=EXCLUDED.user_id, filename=EXCLUDED.filename, file_path=EXCLUDED.file_path, "
+                "pages=EXCLUDED.pages, chunks=EXCLUDED.chunks, file_size=EXCLUDED.file_size, "
+                "status=EXCLUDED.status, created_at=EXCLUDED.created_at"
+            )
+        elif "INSERT OR IGNORE INTO chat_session_documents" in q:
+            q = q.replace("INSERT OR IGNORE INTO chat_session_documents", "INSERT INTO chat_session_documents") + (
+                " ON CONFLICT (session_id, document_id) DO NOTHING"
+            )
+        elif "INSERT OR REPLACE INTO chat_session_documents" in q:
+            q = q.replace("INSERT OR REPLACE INTO chat_session_documents", "INSERT INTO chat_session_documents") + (
+                " ON CONFLICT (session_id, document_id) DO UPDATE SET is_active=1"
+            )
+
+        # Convert ? positional placeholders to :p0, :p1, ...
+        idx = 0
+        param_dict = {}
+
+        def repl(m):
+            nonlocal idx
+            key = f"p{idx}"
+            param_dict[key] = params[idx]
+            idx += 1
+            return f":{key}"
+
+        named_query = re.sub(r"\?", repl, q)
+        res = self.sa_conn.execute(text(named_query), param_dict)
+        return PGCursorWrapper(res)
+
+    def commit(self):
+        pass
+
+
 class DatabaseManager:
     """
-    Central SQLite database manager providing multi-tenant persistence
+    Central database manager providing multi-tenant persistence
     for users, documents, chat sessions, and messages.
+    Supports SQLite (local development, testing) and PostgreSQL (production cloud).
     """
 
     def __init__(self, db_path: Optional[str] = None):
-        if db_path is None:
-            base_dir = Path(__file__).resolve().parent.parent.parent
-            self.db_path = str(base_dir / "ragmate_database.db")
+        target = db_path or getattr(settings, "DATABASE_URL", None) or os.environ.get("DATABASE_URL")
+        self.is_postgres = False
+        self.engine = None
+
+        if target and (target.startswith("postgres://") or target.startswith("postgresql://") or target.startswith("postgresql+")):
+            self.is_postgres = True
+            if target.startswith("postgres://"):
+                target = "postgresql+psycopg://" + target[len("postgres://"):]
+            elif target.startswith("postgresql://") and not target.startswith("postgresql+"):
+                target = "postgresql+psycopg://" + target[len("postgresql://"):]
+            self.db_url = target
+            from sqlalchemy import create_engine
+            self.engine = create_engine(
+                self.db_url,
+                pool_size=10,
+                max_overflow=20,
+                pool_pre_ping=True,
+                pool_recycle=300,
+            )
+            self.db_path = None
+            logger.info("DatabaseManager connected to PostgreSQL: %s", self.db_url.split("@")[-1])
         else:
-            self.db_path = db_path
+            if db_path is None or str(db_path).startswith("sqlite"):
+                base_dir = Path(__file__).resolve().parent.parent.parent
+                self.db_path = str(base_dir / "ragmate_database.db")
+            else:
+                self.db_path = str(db_path)
+            logger.info("DatabaseManager connected to SQLite: %s", self.db_path)
 
         self._init_db()
 
-    def _get_connection(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        return conn
+    @contextmanager
+    def _get_connection(self):
+        if self.is_postgres:
+            with self.engine.begin() as conn:
+                yield PGConnectionWrapper(conn)
+        else:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            try:
+                yield conn
+            finally:
+                conn.close()
+
+    def ping(self) -> bool:
+        try:
+            with self._get_connection() as conn:
+                conn.execute("SELECT 1").fetchone()
+            return True
+        except Exception as e:
+            logger.error("Database ping failed: %s", e)
+            return False
 
     def _init_db(self):
+        if self.is_postgres:
+            with self._get_connection() as conn:
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS users (
+                        id VARCHAR(64) PRIMARY KEY,
+                        name VARCHAR(255) NOT NULL,
+                        email VARCHAR(255) UNIQUE NOT NULL,
+                        password_hash VARCHAR(255) NOT NULL,
+                        created_at VARCHAR(64) NOT NULL,
+                        updated_at VARCHAR(64) NOT NULL
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS documents (
+                        id VARCHAR(64) PRIMARY KEY,
+                        user_id VARCHAR(64) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        filename VARCHAR(255) NOT NULL,
+                        file_path TEXT NOT NULL,
+                        pages INTEGER NOT NULL DEFAULT 0,
+                        chunks INTEGER NOT NULL DEFAULT 0,
+                        file_size BIGINT NOT NULL DEFAULT 0,
+                        status VARCHAR(50) NOT NULL DEFAULT 'completed',
+                        created_at VARCHAR(64) NOT NULL
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS chat_sessions (
+                        id VARCHAR(64) PRIMARY KEY,
+                        user_id VARCHAR(64) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        title VARCHAR(255) NOT NULL,
+                        created_at VARCHAR(64) NOT NULL,
+                        updated_at VARCHAR(64) NOT NULL
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS messages (
+                        id VARCHAR(64) PRIMARY KEY,
+                        session_id VARCHAR(64) NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
+                        role VARCHAR(50) NOT NULL,
+                        content TEXT NOT NULL,
+                        sources_json TEXT,
+                        created_at VARCHAR(64) NOT NULL
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS chat_session_documents (
+                        session_id VARCHAR(64) NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
+                        document_id VARCHAR(64) NOT NULL,
+                        is_active INTEGER NOT NULL DEFAULT 1,
+                        PRIMARY KEY (session_id, document_id)
+                    )
+                    """
+                )
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_sessions_user ON chat_sessions(user_id, updated_at DESC)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at ASC)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_session_docs ON chat_session_documents(session_id)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_session_docs_doc ON chat_session_documents(document_id)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_documents_user ON documents(user_id)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_documents_created ON documents(created_at DESC)")
+                conn.commit()
+            return
+
         with self._get_connection() as conn:
             # 1. Users table
             conn.execute(

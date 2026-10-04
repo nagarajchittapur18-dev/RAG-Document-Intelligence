@@ -41,14 +41,29 @@ class VectorStore:
         self.collection_name = collection_name or self.DEFAULT_COLLECTION_NAME
         self.embedding_service = embedding_service or EmbeddingService()
 
-        # Ensure persist directory exists
-        Path(self.persist_directory).mkdir(parents=True, exist_ok=True)
-
-        logger.info(
-            "Initializing ChromaDB PersistentClient at directory: %s",
-            self.persist_directory,
-        )
-        self.client = chromadb.PersistentClient(path=self.persist_directory)
+        if getattr(settings, "CHROMA_HOST", None):
+            logger.info(
+                "Initializing ChromaDB HttpClient at %s:%s (SSL=%s)",
+                settings.CHROMA_HOST,
+                settings.CHROMA_PORT,
+                settings.CHROMA_SSL,
+            )
+            client_kwargs = {
+                "host": settings.CHROMA_HOST,
+                "port": settings.CHROMA_PORT,
+                "ssl": settings.CHROMA_SSL,
+            }
+            if getattr(settings, "CHROMA_AUTH_TOKEN", None):
+                client_kwargs["headers"] = {"Authorization": f"Bearer {settings.CHROMA_AUTH_TOKEN}"}
+            self.client = chromadb.HttpClient(**client_kwargs)
+        else:
+            # Ensure persist directory exists
+            Path(self.persist_directory).mkdir(parents=True, exist_ok=True)
+            logger.info(
+                "Initializing ChromaDB PersistentClient at directory: %s",
+                self.persist_directory,
+            )
+            self.client = chromadb.PersistentClient(path=self.persist_directory)
 
         # Get or create collection configured for cosine distance
         self.collection = self.client.get_or_create_collection(

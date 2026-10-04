@@ -25,6 +25,7 @@ from app.services.pdf_processor import (
     PDFProcessor,
     ScannedPDFError,
 )
+from app.services.storage import get_storage_provider
 from app.services.vector_store import VectorStore
 from app.utils.dependencies import get_current_user
 
@@ -36,6 +37,7 @@ pdf_processor = PDFProcessor(max_file_size_mb=settings.MAX_FILE_SIZE_MB)
 chunker = DocumentChunker(chunk_size=settings.CHUNK_SIZE, chunk_overlap=settings.CHUNK_OVERLAP)
 vector_store = VectorStore()
 document_store = DocumentStore()
+storage_provider = get_storage_provider()
 
 
 @router.post(
@@ -81,18 +83,6 @@ async def upload_document(
     # Generate unique document ID
     doc_id = uuid.uuid4().hex[:12]
 
-    # Prepare storage directory and verify path safety
-    upload_dir = Path(settings.UPLOAD_DIRECTORY).resolve()
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    saved_path = (upload_dir / f"{doc_id}_{clean_filename}").resolve()
-
-    # Path traversal protection
-    if not str(saved_path).startswith(str(upload_dir)):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid file path or path traversal detected.",
-        )
-
     # Read content and enforce file size constraints
     try:
         content = await file.read()
@@ -111,13 +101,18 @@ async def upload_document(
                 detail="Uploaded file is empty (0 bytes).",
             )
 
-        with open(saved_path, "wb") as f:
-            f.write(content)
+        saved_identifier = storage_provider.save_file(content, f"{doc_id}_{clean_filename}")
+        local_path = storage_provider.get_local_path(saved_identifier)
 
     except HTTPException:
         raise
+    except ValueError as ve:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(ve),
+        )
     except Exception as e:
-        logger.error("Failed to write uploaded file to disk: %s", str(e), exc_info=True)
+        logger.error("Failed to store uploaded file: %s", str(e), exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Internal error while saving uploaded document.",
@@ -125,14 +120,14 @@ async def upload_document(
 
     # Process PDF through extraction, chunking, and embedding pipeline
     try:
-        extracted = pdf_processor.extract_document(str(saved_path), filename=clean_filename)
+        extracted = pdf_processor.extract_document(local_path, filename=clean_filename)
         chunks = chunker.chunk_document(extracted, document_id=doc_id)
         vector_store.add_chunks(chunks, user_id=current_user.id)
         document_store.add_document(
             document_id=doc_id,
             user_id=current_user.id,
             filename=clean_filename,
-            file_path=str(saved_path.resolve()),
+            file_path=saved_identifier,
             pages=extracted.page_count,
             chunks=len(chunks),
             file_size=file_size,
@@ -157,17 +152,14 @@ async def upload_document(
         )
 
     except (CorruptPDFError, EmptyPDFError, ScannedPDFError, OversizedPDFError) as pdf_err:
-        # Clean up disk file on failure
-        if saved_path.exists():
-            saved_path.unlink(missing_ok=True)
+        storage_provider.delete_file(saved_identifier)
         logger.warning("PDF processing failed for '%s': %s", clean_filename, str(pdf_err))
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(pdf_err),
         )
     except Exception as e:
-        if saved_path.exists():
-            saved_path.unlink(missing_ok=True)
+        storage_provider.delete_file(saved_identifier)
         logger.error("Unexpected error processing document '%s': %s", clean_filename, str(e), exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -250,15 +242,16 @@ async def get_document_page(
             detail=f"Page number {page_number} is out of range. Document has {doc.pages} pages.",
         )
 
-    file_path = Path(doc.file_path)
-    if not file_path.exists():
+    try:
+        local_path = storage_provider.get_local_path(doc.file_path)
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Underlying document file not found on disk.",
         )
 
     try:
-        page_data = pdf_processor.extract_page(str(file_path), page_number)
+        page_data = pdf_processor.extract_page(local_path, page_number)
         return DocumentPageResponse(
             document_id=doc.id,
             document_name=doc.filename,
@@ -304,11 +297,9 @@ async def delete_document(
 
     # 2. Delete file from storage
     try:
-        file_path = Path(doc.file_path)
-        if file_path.exists():
-            file_path.unlink()
+        storage_provider.delete_file(doc.file_path)
     except Exception as e:
-        logger.warning("Could not delete file %s from disk: %s", doc.file_path, e)
+        logger.warning("Could not delete file %s from storage: %s", doc.file_path, e)
 
     # 3. Delete from document registry
     document_store.delete_document(document_id, user_id=current_user.id)

@@ -73,6 +73,8 @@ backend/*.sqlite3
 evaluation/results/*
 !evaluation/results/.gitkeep
 !evaluation/results/summary.json
+evaluation/reports/*
+!evaluation/reports/.gitkeep
 
 # IDEs & OS
 .vscode/

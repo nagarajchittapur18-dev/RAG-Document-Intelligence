@@ -1,5 +1,5 @@
 import os
-from typing import List, Union
+from typing import List, Optional, Union
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -18,16 +18,26 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
     JWT_EXPIRATION_MINUTES: int = 1440
 
+    # Deployment & Hosting Environment
+    ENVIRONMENT: str = "development"
+    FRONTEND_URL: Optional[str] = None
+    BACKEND_URL: Optional[str] = None
+
     # Vector Store & Embedding Settings
     CHROMA_PERSIST_DIRECTORY: str = os.path.abspath(
         os.path.join(os.path.dirname(__file__), "..", "..", "chroma_data")
     )
+    CHROMA_HOST: Optional[str] = None
+    CHROMA_PORT: int = 8000
+    CHROMA_SSL: bool = False
+    CHROMA_AUTH_TOKEN: Optional[str] = None
     EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
 
     # RAG & Ingestion Hyperparameters
     TOP_K: int = 5
     INITIAL_TOP_K: int = 12
     FINAL_TOP_K: int = 5
+    RETRIEVAL_TOP_K: Optional[int] = None
     MAX_CONTEXT_CHARS: int = 12000
     ENABLE_DOCUMENT_BALANCING: bool = True
     CHUNK_SIZE: int = 1000
@@ -45,9 +55,15 @@ class Settings(BaseSettings):
     MAX_RERANK_TEXT_LENGTH: int = 1000
     RAG_DEBUG: bool = False
 
-    # File Storage Settings
+    # File & Object Storage Settings
+    STORAGE_PROVIDER: str = "local"  # "local", "s3", "r2", "supabase"
     UPLOAD_DIRECTORY: str = "./uploads"
     MAX_FILE_SIZE_MB: int = 25
+    STORAGE_BUCKET: Optional[str] = None
+    STORAGE_ENDPOINT_URL: Optional[str] = None
+    STORAGE_REGION: str = "us-east-1"
+    STORAGE_ACCESS_KEY: Optional[str] = None
+    STORAGE_SECRET_KEY: Optional[str] = None
 
     # CORS Settings
     CORS_ORIGINS: Union[List[str], str] = [

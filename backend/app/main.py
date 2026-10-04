@@ -213,12 +213,26 @@ async def readiness_probe():
     """Kubernetes / Docker container readiness probe."""
     try:
         db = DatabaseManager()
-        with db._get_connection() as conn:
-            conn.execute("SELECT 1").fetchone()
+        if not db.ping():
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Database is not reachable",
+            )
         return {"status": "ready", "database": "connected"}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.warning("Readiness probe check failed: %s", e)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Service dependencies not ready",
         )
+
+
+if __name__ == "__main__":
+    import os
+    import uvicorn
+
+    port = int(os.environ.get("PORT", 8000))
+    host = os.environ.get("HOST", "0.0.0.0")
+    uvicorn.run("app.main:app", host=host, port=port, reload=False)
