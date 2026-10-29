@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: rag-document-intelligence
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install --no-cache-dir -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.11
+      - key: ENVIRONMENT
+        value: production
+      - key: GEMINI_MODEL
+        value: gemini-3.5-flash
+      - key: EMBEDDING_MODEL
+        value: all-MiniLM-L6-v2
+      - key: CHROMA_PERSIST_DIRECTORY
+        value: ./chroma_data
+      - key: RERANKER_ENABLED
+        value: "false"
+      - key: CORS_ORIGINS
+        value: "*"

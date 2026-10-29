@@ -1,0 +1,2 @@
+# Master root requirements for cloud deployment platforms (Render, Railway, Heroku)
+-r backend/requirements.txt
