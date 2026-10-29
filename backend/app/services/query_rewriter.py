@@ -50,22 +50,24 @@ class QueryRewriter:
         from conversation turns and document names.
         """
         clean_q = question.strip()
-        if not conversation_history or not self.should_rewrite(clean_q):
+        if not self.should_rewrite(clean_q):
             return clean_q
 
-        # Extract recent conversation context (last 2 user/assistant turns)
-        recent_turns = conversation_history[-3:]
-        prior_user_turns = [t["content"] for t in recent_turns if t.get("role") == "user"]
-        prior_assistant_turns = [t["content"] for t in recent_turns if t.get("role") == "assistant"]
-
-        context_clues: List[str] = []
-
-        # 1. Resolve ordinal document references ("first paper", "second paper")
+        # 1. Resolve document references ("this document", "the paper", "first paper")
         clean_q_lower = clean_q.lower()
         rewritten = clean_q
 
         if document_names and len(document_names) >= 1:
-            clean_names = [Path_stem(d) for d in document_names]
+            clean_names = [Path_stem(d).replace("_", " ").strip() for d in document_names]
+
+            # If user refers to "this document", "this paper", "the document", "the paper", "this study"
+            if len(clean_names) == 1:
+                rewritten = re.sub(
+                    r"\b(this|the)\s+(paper|document|study|article|report|text|file)\b",
+                    clean_names[0],
+                    rewritten,
+                    flags=re.IGNORECASE,
+                )
 
             if re.search(r"\bthe\s+first\s+(paper|document|study|model)\b", clean_q_lower):
                 rewritten = re.sub(
@@ -88,6 +90,16 @@ class QueryRewriter:
                     rewritten,
                     flags=re.IGNORECASE,
                 )
+
+        if not conversation_history:
+            return rewritten
+
+        # Extract recent conversation context (last 2 user/assistant turns)
+        recent_turns = conversation_history[-3:]
+        prior_user_turns = [t["content"] for t in recent_turns if t.get("role") == "user"]
+        prior_assistant_turns = [t["content"] for t in recent_turns if t.get("role") == "assistant"]
+
+        context_clues: List[str] = []
 
         # 2. Extract salient topic from previous user query
         if prior_user_turns:

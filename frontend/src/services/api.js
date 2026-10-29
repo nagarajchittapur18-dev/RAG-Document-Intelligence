@@ -216,6 +216,8 @@ export const api = {
     if (topK) {
       payload.top_k = topK;
     }
+    const res = await apiClient.post(`/chat/sessions/${sessionId}/messages`, payload);
+    return res.data;
   },
 
   // ==========================================

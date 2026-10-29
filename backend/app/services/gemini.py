@@ -353,7 +353,7 @@ class GeminiService:
     def _call_gemini_api(self, prompt: str) -> str:
         """Dispatches request to Gemini using available SDK with resilient fallback across models."""
         candidate_models = [self.model_name]
-        for fallback in ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-3.5-flash"]:
+        for fallback in ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite"]:
             if fallback not in candidate_models:
                 candidate_models.append(fallback)
 

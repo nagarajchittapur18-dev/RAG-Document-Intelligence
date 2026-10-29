@@ -29,7 +29,10 @@ class EmbeddingService:
         """Loads and caches the SentenceTransformer embedding model."""
         logger.info("Initializing SentenceTransformer embedding model: %s", model_name)
         self._model_name = model_name
-        self._model = SentenceTransformer(model_name)
+        try:
+            self._model = SentenceTransformer(model_name, local_files_only=True)
+        except Exception:
+            self._model = SentenceTransformer(model_name)
         if hasattr(self._model, "get_embedding_dimension"):
             self.embedding_dimension = self._model.get_embedding_dimension()
         else:

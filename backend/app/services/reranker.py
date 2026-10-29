@@ -68,7 +68,10 @@ class RerankerService:
         try:
             logger.info("Loading CrossEncoder model '%s' on %s...", self.model_name, self.device)
             t0 = time.perf_counter()
-            self._model = CrossEncoder(self.model_name, device=self.device)
+            try:
+                self._model = CrossEncoder(self.model_name, device=self.device, local_files_only=True)
+            except Exception:
+                self._model = CrossEncoder(self.model_name, device=self.device)
             logger.info("CrossEncoder '%s' successfully loaded in %.2f ms", self.model_name, (time.perf_counter() - t0) * 1000)
             return self._model
         except Exception as e:

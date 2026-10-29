@@ -233,11 +233,11 @@ export default function Chat() {
       const aiMessage = {
         id: Date.now() + 1,
         role: 'assistant',
-        content: response.answer,
-        sources: response.sources || [],
-        retrievedChunks: response.retrieved_chunks,
-        documentsSearched: response.documents_searched,
-        responseTimeMs: response.response_time_ms,
+        content: response?.answer || 'No answer generated.',
+        sources: response?.sources || [],
+        retrievedChunks: response?.retrieved_chunks || 0,
+        documentsSearched: response?.documents_searched || 0,
+        responseTimeMs: response?.response_time_ms || 0,
         timestamp: new Date().toISOString(),
       };
 
